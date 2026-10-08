@@ -8,7 +8,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
+<script>
+/* Settings. The publishable key is meant to be public; database rules (schema.sql) protect the data. */
+window.CRM_CONFIG = {
+  appName: "DMT Daily Activity Tracker",
+  supabaseUrl: "https://jrfiyliesitsgnehxqtv.supabase.co",
+  supabaseAnonKey: "sb_publishable_-AOpf0GlT5MeQh5-NMZc9g_CD2xu9Ch",
+  microsoftSignIn: false
+};
+</script>
 <style>
 /* Source colour carries through the UI: picker tiles, form edge, chips, summary bars. Everything else stays neutral. */
 :root{
@@ -202,6 +210,15 @@ dialog::backdrop{background:rgba(10,15,20,.5)}
 .aud-set{display:flex;flex-wrap:wrap;gap:6px}
 .aud-set label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:14px;font-weight:600}
 .aud-set label:has(input:checked){background:var(--sunk);border-color:var(--ink)}
+/* dashboard */
+.sec{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.kpi .delta{display:block;margin-top:4px;font-size:12px;color:var(--muted)}
+.scol{flex:1;min-width:3px;display:flex;flex-direction:column-reverse;border-radius:3px 3px 0 0;overflow:hidden}
+.scol span{display:block;width:100%}
+.scol:hover{opacity:.8}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px}
+.cp-bar.ending span{background:var(--warn)}
+.cp-bar.ended span{background:var(--line-2)}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:var(--r);font-weight:600;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
 .loading{color:var(--muted);padding:40px 0;text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -313,7 +330,7 @@ function contactProblem(channel, c) {
 function phoneProblem(p) { p = String(p || "").trim(); if (!p) return ""; const n = normContact("call", p); return /^\d{9,12}$/.test(n) ? "" : "Enter a full phone number, or leave it blank."; }
 
 /* ================= state ================= */
-function blankDraft(ch) { return { channel: ch || null, date: today(), contact: "", dealer: "", dname: "", dphone: "", state: "", topic: "", sub: "", desc: "", caseRef: "", assigned: "", status: "Closed", completed: today(), resolution: "" }; }
+function blankDraft(ch) { return { channel: ch || null, date: today(), contact: "", dealer: "", dname: "", dphone: "", state: "", topic: "", sub: "", desc: "", caseRef: "", assigned: "", status: "Closed", completed: today(), resolution: "", campaign: "" }; }
 const S = {
   api: null, email: "", me: null, members: [],
   channels: DEFAULT_CHANNELS.slice(), topics: [], subs: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(),
@@ -321,7 +338,7 @@ const S = {
   draft: blankDraft(null), hist: { key: "", rows: [], loading: false, err: "" }, mine: [],
   cf: { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "", from: addDays(today(), -29), to: today() },
   cases: { rows: [], count: 0 },
-  rp: { preset: "today", from: today(), to: today(), staff: "" }, rpRows: [],
+  rp: { mode: "day", day: today(), month: today().slice(0, 7), from: addDays(today(), -6), to: today(), staff: "", channel: "", topic: "", state: "" }, rpRows: [], rpPrev: [], cpFocus: null,
   audience: DEFAULT_AUDIENCE.slice(), campaigns: [], cpFilter: "current", cpQ: "", cpOpen: new Set()
 };
 function canManage() { return role() === "supervisor" || role() === "manager"; }
@@ -331,11 +348,11 @@ function caseFields(d) {
   return { case_date: d.date || today(), channel: d.channel, contact: d.contact.trim(), contact_norm: normContact(d.channel, d.contact),
     dealer_id: d.dealer.trim().toUpperCase() || null, dealer_name: d.dname.trim() || null, dealer_phone: d.dphone.trim() || null, state: d.state || null,
     topic: d.topic || null, sub_issue: d.sub || null, description: d.desc.trim(), case_ref: d.caseRef.trim().toUpperCase() || null,
-    assigned_to: d.assigned.trim() || null, status: d.status, completed_on: d.status === "Closed" ? (d.completed || today()) : null, resolution: d.resolution.trim() || null };
+    assigned_to: d.assigned.trim() || null, campaign_id: d.campaign || null, status: d.status, completed_on: d.status === "Closed" ? (d.completed || today()) : null, resolution: d.resolution.trim() || null };
 }
 function rowToDraft(r) {
   return { channel: r.channel, date: r.case_date, contact: r.contact || "", dealer: r.dealer_id || "", dname: r.dealer_name || "", dphone: r.dealer_phone || "", state: r.state || "",
-    topic: r.topic || "", sub: r.sub_issue || "", desc: r.description || "", caseRef: r.case_ref || "", assigned: r.assigned_to || "", status: r.status, completed: r.completed_on || today(), resolution: r.resolution || "" };
+    topic: r.topic || "", sub: r.sub_issue || "", campaign: r.campaign_id || "", desc: r.description || "", caseRef: r.case_ref || "", assigned: r.assigned_to || "", status: r.status, completed: r.completed_on || today(), resolution: r.resolution || "" };
 }
 
 /* ================= data: Supabase ================= */
@@ -453,7 +470,7 @@ function demoApi() {
       cases.push({ id: "d" + (++seq), case_no: seq, case_date: day, created_at: d.toISOString(), channel: ch, contact, contact_norm: normContact(ch, contact),
         dealer_id: dl[0], dealer_name: dl[1], dealer_phone: dl[2], dealer_phone_norm: normContact("call", dl[2]), state: dl[3],
         topic: pick(settings.topics), sub_issue: pick(DEFAULT_SUBS), description: pick(descs), case_ref: "CA" + day.slice(8) + day.slice(5, 7) + day.slice(0, 4) + "-65" + (30000 + seq),
-        assigned_to: null, status, completed_on: status === "Closed" ? day : null, resolution: null, staff_email: st.email, staff_name: st.name, updated_at: d.toISOString(), updated_by: st.email });
+        assigned_to: null, campaign_id: day >= campaigns[0].start_date && rnd() < .35 ? "c1" : null, status, completed_on: status === "Closed" ? day : null, resolution: null, staff_email: st.email, staff_name: st.name, updated_at: d.toISOString(), updated_by: st.email });
     }
   }
   function match(r, f) {
@@ -507,7 +524,7 @@ function demoApi() {
 async function boot() {
   document.title = APP_NAME;
   S.api = LIVE ? supaApi() : demoApi();
-  if (!LIVE) showBanner("Preview mode: not connected to a database, so nothing is saved. Add your Supabase details to config.js to go live.");
+  if (!LIVE) showBanner("Preview mode: not connected to a database, so nothing is saved.");
   if (LIVE) S.api.sb.auth.onAuthStateChange(ev => { if (ev === "PASSWORD_RECOVERY") renderSetPassword(); });
   let session = null;
   try { session = await S.api.session(); } catch (e) { console.error(e); }
@@ -536,6 +553,7 @@ async function loadCore() {
   S.subs = (st && Array.isArray(st.sub_issues)) ? st.sub_issues : DEFAULT_SUBS.slice();
   S.states = arr(st && st.states, DEFAULT_STATES.slice());
   S.audience = arr(st && st.campaign_audience, DEFAULT_AUDIENCE.slice());
+  try { S.campaigns = await S.api.campaigns(); } catch (e) { console.warn("campaigns not loaded", e); S.campaigns = []; }
   put($("#dl-assign"), S.members.filter(m => m.active).map(m => h("option", { value: m.name })));
 }
 
@@ -597,7 +615,7 @@ function renderProblem(m, e) {
 /* ================= shell ================= */
 function tabsFor() {
   const r = role();
-  const t = [["lodge", "Lodge case"], ["cases", "Tracker"], ["summary", r === "staff" ? "My summary" : "Summary"], ["campaigns", "Campaigns"]];
+  const t = [["lodge", "Lodge case"], ["cases", "Tracker"], ["summary", r === "staff" ? "My dashboard" : "Dashboard"], ["campaigns", "Campaigns"]];
   if (r === "manager") t.push(["settings", "Team & lists"]);
   return t;
 }
@@ -659,6 +677,7 @@ function caseForm(d, opt) {
       fieldWrap(pre, "state", "State", sel("state", S.states, "state", "Select"))),
     h("hr", { class: "divider" }),
     h("div", { class: "row2" }, fieldWrap(pre, "topic", "Main issue", topicEl), fieldWrap(pre, "sub", "Sub issue", sel("sub", S.subs, "sub", "Select"))),
+    campaignField(d, pre, ro),
     fieldWrap(pre, "desc", "Description", desc),
     h("div", { class: "row2" },
       fieldWrap(pre, "caseRef", h("span", {}, "Case no. ", h("span", { class: "opt" }, "(from CRM, if any)")), inp("caseRef", "caseRef", { type: "text", class: "up", placeholder: "e.g. CA07102026-6532688" })),
@@ -666,6 +685,18 @@ function caseForm(d, opt) {
     h("div", { class: "row2", style: "align-items:end" }, h("div", { class: "field" }, h("span", { class: "lbl" }, "Status"), statusSet), doneWrap),
     h("div", { class: "field" }, h("label", { for: id("res") }, "Remarks ", h("span", { class: "opt" }, "(optional)")), res)
   ];
+}
+// Optional link to a campaign running on (or up to 30 days before) the case date.
+function campaignField(d, pre, ro) {
+  const day = d.date || today();
+  const list = S.campaigns.filter(c => c.start_date <= day && addDays(c.end_date, 30) >= day || c.id === d.campaign)
+    .sort((a, b) => (b.end_date >= day) - (a.end_date >= day) || a.end_date.localeCompare(b.end_date));
+  if (!list.length) return null;
+  const s = h("select", { id: pre + "-campaign", disabled: ro, onchange: e => d.campaign = e.target.value },
+    h("option", { value: "" }, "Not related to a campaign"),
+    list.map(c => h("option", { value: c.id }, c.title + (c.code ? " (" + c.code + ")" : "") + (c.end_date < day ? ", ended" : ""))));
+  s.value = d.campaign || "";
+  return fieldWrap(pre, "campaign", h("span", {}, "Related campaign ", h("span", { class: "opt" }, "(if the dealer asked about one)")), s);
 }
 function fieldWrap(pre, key, label, el) { return h("div", { class: "field", id: pre + "-w-" + key }, h("label", { for: el.id || null }, label), el, h("span", { class: "err", id: pre + "-e-" + key })); }
 function clearErr(pre, k) { const e = $("#" + pre + "-e-" + k); if (e) e.textContent = ""; $("#" + pre + "-w-" + k)?.querySelector("[aria-invalid]")?.removeAttribute("aria-invalid"); }
@@ -859,10 +890,10 @@ function loadXLSX() {
   if (window.XLSX) return Promise.resolve();
   return xlsxReady || (xlsxReady = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = res; s.onerror = () => { xlsxReady = null; rej(new Error("Excel library didn’t load")); }; document.head.append(s); }));
 }
-const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["LOGGED BY", 16]];
+const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["CAMPAIGN", 30], ["LOGGED BY", 16]];
 function trackerAoa(rows) {
   return [TRACKER_COLS.map(c => c[0]), ...rows.map((r, i) => [i + 1, fmtDmy(r.case_date), r.dealer_id || "", r.dealer_phone || "", r.dealer_name || "", r.state || "", r.topic || "", r.sub_issue || "",
-    r.description || "", r.case_ref || "", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", nameOf(r.staff_email, r.staff_name)])];
+    r.description || "", r.case_ref || "", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", r.campaign_id ? campaignName(r.campaign_id) : "", nameOf(r.staff_email, r.staff_name)])];
 }
 function sheet(aoa, widths) { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); return ws; }
 function saveBook(wb, name) { XLSX.writeFile(wb, name); }
@@ -879,49 +910,74 @@ async function exportTracker() {
   } catch (e) { toast("Download failed: " + errMsg(e)); }
 }
 
-/* ================= summary ================= */
-const PRESETS = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["month", "This month"], ["lastmonth", "Last month"], ["custom", "Custom"]];
-function presetRange(p) {
-  const t = today();
-  if (p === "today") return [t, t];
-  if (p === "yesterday") { const y = addDays(t, -1); return [y, y]; }
-  if (p === "7") return [addDays(t, -6), t];
-  if (p === "month") return [t.slice(0, 8) + "01", t];
-  if (p === "lastmonth") { const first = t.slice(0, 8) + "01"; const end = addDays(first, -1); return [end.slice(0, 8) + "01", end]; }
-  return [S.rp.from, S.rp.to];
+/* ================= dashboard ================= */
+const MONTH_NOW = () => today().slice(0, 7);
+function monthEnd(ym) { return addDays(addDays(ym + "-28", 4).slice(0, 8) + "01", -1); }
+function addMonths(ym, n) { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + "-" + pad(d.getMonth() + 1); }
+function monthName(ym) { return MONTHS[+ym.slice(5, 7) - 1] + " " + ym.slice(0, 4); }
+// Current and comparison ranges for the chosen view.
+function dashRanges() {
+  const r = S.rp;
+  if (r.mode === "day") return { from: r.day, to: r.day, pFrom: addDays(r.day, -1), pTo: addDays(r.day, -1), label: fmtDate(r.day), vs: "vs previous day" };
+  if (r.mode === "month") {
+    const from = r.month + "-01", end = monthEnd(r.month);
+    const to = end > today() && from <= today() ? today() : end;           // current month: up to today
+    const n = dayDiff(from, to); const pFrom = addMonths(r.month, -1) + "-01";
+    let pTo = addDays(pFrom, n); const pEnd = monthEnd(addMonths(r.month, -1)); if (pTo > pEnd) pTo = pEnd;
+    return { from, to, pFrom, pTo, label: monthName(r.month) + (to !== end ? " (to " + fmtShort(to) + ")" : ""), vs: to !== end ? "vs same days last month" : "vs previous month" };
+  }
+  const n = dayDiff(r.from, r.to);
+  return { from: r.from, to: r.to, pFrom: addDays(r.from, -(n + 1)), pTo: addDays(r.from, -1), label: r.from === r.to ? fmtDate(r.from) : fmtShort(r.from) + " to " + fmtShort(r.to) + " " + r.to.slice(0, 4), vs: "vs previous " + plural(n + 1, "day") };
+}
+function rangeLabel() { return dashRanges().label; }
+function scopeLabel() { return S.rp.staff ? nameOf(S.rp.staff) : role() === "staff" ? S.me.name : "Whole team"; }
+function dashFilter(rows) {
+  const f = S.rp;
+  return rows.filter(r => (!f.channel || r.channel === f.channel) && (!f.topic || (r.topic || NOT_SET) === f.topic) && (!f.state || (r.state || NOT_SET) === f.state));
 }
 function renderSummary() {
   const r = S.rp; const isStaff = role() === "staff";
-  const presets = h("div", { class: "presets", role: "group", "aria-label": "Date range" }, PRESETS.map(([k, l]) => h("button", { type: "button", "aria-pressed": String(r.preset === k),
-    onclick: () => { r.preset = k; [r.from, r.to] = presetRange(k); renderSummary(); } }, l)));
-  const custom = r.preset === "custom" ? h("div", { class: "actions" },
+  const seg = h("div", { class: "presets", role: "group", "aria-label": "View" }, [["day", "Daily"], ["month", "Monthly"], ["range", "Custom"]].map(([k, l]) =>
+    h("button", { type: "button", "aria-pressed": String(r.mode === k), onclick: () => { r.mode = k; renderSummary(); } }, l)));
+  const step = n => { if (r.mode === "day") r.day = addDays(r.day, n); else r.month = addMonths(r.month, n); renderSummary(); };
+  let picker;
+  if (r.mode === "day") picker = h("div", { class: "actions", style: "gap:6px" },
+    h("button", { class: "btn sm", "aria-label": "Previous day", onclick: () => step(-1) }, "‹"),
+    h("input", { type: "date", value: r.day, max: today(), "aria-label": "Day", style: "width:auto", onchange: e => { r.day = e.target.value || today(); renderSummary(); } }),
+    h("button", { class: "btn sm", "aria-label": "Next day", disabled: r.day >= today() ? true : null, onclick: () => step(1) }, "›"),
+    r.day !== today() ? h("button", { class: "linkbtn small", onclick: () => { r.day = today(); renderSummary(); } }, "Today") : null);
+  else if (r.mode === "month") picker = h("div", { class: "actions", style: "gap:6px" },
+    h("button", { class: "btn sm", "aria-label": "Previous month", onclick: () => step(-1) }, "‹"),
+    h("input", { type: "month", value: r.month, max: MONTH_NOW(), "aria-label": "Month", style: "width:auto;min-width:170px", onchange: e => { r.month = e.target.value || MONTH_NOW(); renderSummary(); } }),
+    h("button", { class: "btn sm", "aria-label": "Next month", disabled: r.month >= MONTH_NOW() ? true : null, onclick: () => step(1) }, "›"),
+    r.month !== MONTH_NOW() ? h("button", { class: "linkbtn small", onclick: () => { r.month = MONTH_NOW(); renderSummary(); } }, "This month") : null);
+  else picker = h("div", { class: "actions", style: "gap:6px" },
     h("input", { type: "date", value: r.from, "aria-label": "From", style: "width:auto", onchange: e => { r.from = e.target.value; loadSummary(); } }), h("span", { class: "muted" }, "to"),
-    h("input", { type: "date", value: r.to, "aria-label": "To", style: "width:auto", onchange: e => { r.to = e.target.value; loadSummary(); } })) : null;
+    h("input", { type: "date", value: r.to, "aria-label": "To", style: "width:auto", onchange: e => { r.to = e.target.value; loadSummary(); } }));
+  const fsel = (k, label, list) => { const s = h("select", { "aria-label": label, style: "width:auto", onchange: e => { r[k] = e.target.value; drawSummary(); } }, h("option", { value: "" }, label + ": all"), list.map(v => h("option", { value: v }, v)), h("option", { value: NOT_SET }, NOT_SET)); s.value = r[k]; return s; };
   let staffSel = null;
   if (!isStaff) { staffSel = h("select", { style: "width:auto", "aria-label": "Staff", onchange: e => { r.staff = e.target.value; loadSummary(); } }, staffOptions("Whole team")); staffSel.value = r.staff; }
   put($("#main"),
-    h("div", { class: "toolbar", style: "align-items:flex-end" }, h("div", { class: "stack", style: "gap:10px" }, presets, custom),
-      h("div", { class: "actions" }, staffSel, h("button", { class: "btn", onclick: copySummary }, "Copy for WhatsApp"), h("button", { class: "btn primary", onclick: exportSummary }, "Download Excel"))),
-    h("div", { id: "rp" }, h("p", { class: "loading" }, "Counting cases…")));
+    h("div", { class: "toolbar", style: "align-items:center" }, h("div", { class: "actions" }, seg, picker),
+      h("div", { class: "actions" }, h("button", { class: "btn", onclick: copySummary }, "Copy for WhatsApp"), h("button", { class: "btn primary", onclick: exportSummary }, "Download Excel"))),
+    h("div", { class: "actions", style: "margin-bottom:16px;gap:8px" }, staffSel, fsel("channel", "Source", S.channels), fsel("topic", "Main issue", S.topics), fsel("state", "State", S.states),
+      h("button", { class: "linkbtn small", onclick: () => { r.channel = r.topic = r.state = ""; renderSummary(); } }, "Clear filters")),
+    h("div", { id: "rp" }, h("p", { class: "loading" }, "Building dashboard…")));
   loadSummary();
 }
 let rpReq = 0;
 async function loadSummary() {
-  const r = S.rp; const my = ++rpReq;
-  if (r.from > r.to) return put($("#rp"), h("p", { class: "empty" }, "The start date is after the end date."));
-  try { const rows = await S.api.reportCases(r.from, r.to, role() === "staff" ? S.email : r.staff); if (my !== rpReq) return; S.rpRows = rows; drawSummary(); }
-  catch (e) { if (my === rpReq) put($("#rp"), h("p", { class: "empty", style: "color:var(--danger)" }, "Summary didn’t load: " + errMsg(e))); }
+  const R = dashRanges(); const my = ++rpReq;
+  if (R.from > R.to) return put($("#rp"), h("p", { class: "empty" }, "The start date is after the end date."));
+  const staff = role() === "staff" ? S.email : S.rp.staff;
+  try {
+    const [cur, prev, cps] = await Promise.all([S.api.reportCases(R.from, R.to, staff), S.api.reportCases(R.pFrom, R.pTo, staff), S.api.campaigns().catch(() => S.campaigns)]);
+    if (my !== rpReq) return;
+    S.rpRows = cur; S.rpPrev = prev; S.campaigns = cps; drawSummary();
+  } catch (e) { if (my === rpReq) put($("#rp"), h("p", { class: "empty", style: "color:var(--danger)" }, "Dashboard didn’t load: " + errMsg(e))); }
 }
 function countBy(rows, fn) { const o = {}; for (const r of rows) { const k = fn(r); o[k] = (o[k] || 0) + 1; } return o; }
-function rangeLabel() {
-  const { from, to } = S.rp;
-  if (from === to) return fmtDate(from);
-  if (from.slice(8) === "01" && to === addDays(addDays(from.slice(0, 8) + "28", 4).slice(0, 8) + "01", -1)) return MONTHS[+from.slice(5, 7) - 1] + " " + from.slice(0, 4);
-  return fmtShort(from) + " to " + fmtShort(to) + " " + to.slice(0, 4);
-}
-function scopeLabel() { return S.rp.staff ? nameOf(S.rp.staff) : role() === "staff" ? S.me.name : "Whole team"; }
 function orderKeys(obj, preferred) { const extra = Object.keys(obj).filter(k => !preferred.includes(k)); return preferred.filter(k => k in obj).concat(extra); }
-// Pivot: rows x cols with totals, like an Excel pivot table.
 function pivot(rows, rowFn, colFn, colOrder, rowOrder) {
   const cells = {}, rt = {}, ct = {};
   for (const r of rows) { const a = rowFn(r), b = colFn(r); (cells[a] = cells[a] || {})[b] = (cells[a][b] || 0) + 1; rt[a] = (rt[a] || 0) + 1; ct[b] = (ct[b] || 0) + 1; }
@@ -931,76 +987,161 @@ function pivot(rows, rowFn, colFn, colOrder, rowOrder) {
   return { cells, rt, ct, cols, rows: rk, total: rows.length };
 }
 function pivotAoa(title, rowLabel, p) {
-  return [[title], [rowLabel, ...p.cols, "TOTAL"], ...p.rows.map(k => [k, ...p.cols.map(c => p.cells[k][c] || 0), p.rt[k]]), ["TOTAL", ...p.cols.map(c => p.ct[c]), p.total]];
+  return [[title], [rowLabel, ...p.cols, "TOTAL"], ...p.rows.map(k => [k, ...p.cols.map(c => (p.cells[k] || {})[c] || 0), p.rt[k] || 0]), ["TOTAL", ...p.cols.map(c => p.ct[c]), p.total]];
 }
 function pivotTable(rowLabel, p) {
-  if (!p.total) return h("p", { class: "empty" }, "No cases in this range.");
-  const max = Math.max(1, ...p.rows.flatMap(k => p.cols.map(c => p.cells[k][c] || 0)));
+  if (!p.total) return h("p", { class: "empty" }, "No cases for this selection.");
+  const max = Math.max(1, ...p.rows.flatMap(k => p.cols.map(c => (p.cells[k] || {})[c] || 0)));
   return h("div", { class: "tblwrap" }, h("table", { class: "mx" },
     h("thead", {}, h("tr", {}, h("th", {}, rowLabel), p.cols.map(c => h("th", { class: "num" }, c)), h("th", { class: "num" }, "Total"))),
-    h("tbody", {}, p.rows.map(k => h("tr", {}, h("td", { style: "font-weight:600", class: "nowrap", text: k }),
-      p.cols.map(c => { const v = p.cells[k][c] || 0; return h("td", { class: "v" + (v ? "" : " z"), style: v ? "--h:" + Math.round(8 + v / max * 42) + "%" : null, text: v || "·" }); }),
-      h("td", { class: "num tot", text: p.rt[k] })))),
+    h("tbody", {}, p.rows.map(k => h("tr", {}, h("td", { style: "font-weight:600", class: "nowrap", text: p.label ? p.label(k) : k }),
+      p.cols.map(c => { const v = (p.cells[k] || {})[c] || 0; return h("td", { class: "v" + (v ? "" : " z"), style: v ? "--h:" + Math.round(8 + v / max * 42) + "%" : null, text: v || "·" }); }),
+      h("td", { class: "num tot", text: p.rt[k] || 0 })))),
     h("tfoot", {}, h("tr", {}, h("td", {}, "Total"), p.cols.map(c => h("td", { class: "num", text: p.ct[c] })), h("td", { class: "num", text: p.total })))));
 }
 function bars(obj, order, colorFn) {
   const keys = orderKeys(obj, order || Object.keys(obj).sort((a, b) => obj[b] - obj[a]));
   const max = Math.max(1, ...Object.values(obj));
-  if (!keys.length) return h("p", { class: "empty" }, "No cases in this range.");
+  if (!keys.length) return h("p", { class: "empty" }, "No cases for this selection.");
   return h("div", { class: "bars" }, keys.map(k => h("div", { class: "bar" }, h("span", { class: "bl", title: k, text: k }),
     h("span", { class: "bt" }, h("span", { class: "bf", style: "width:" + (obj[k] / max * 100).toFixed(1) + "%;" + (colorFn ? "background:" + colorFn(k) : "") })), h("span", { class: "bn", text: obj[k] }))));
 }
+function campaignName(id) { const c = S.campaigns.find(x => x.id === id); return c ? c.title : "(deleted campaign)"; }
 function summaryData() {
-  const rows = S.rpRows; const ns = v => v || NOT_SET;
-  const st = countBy(rows, r => r.status);
-  const days = []; for (let d = S.rp.from; d <= S.rp.to && days.length < 370; d = addDays(d, 1)) days.push(d);
+  const R = dashRanges(); const rows = dashFilter(S.rpRows); const prev = dashFilter(S.rpPrev || []); const ns = v => v || NOT_SET;
+  const st = countBy(rows, r => r.status), pst = countBy(prev, r => r.status);
+  const days = []; for (let d = R.from; d <= R.to && days.length < 370; d = addDays(d, 1)) days.push(d);
+  // dealers with the most cases
+  const dl = {}; for (const r of rows) if (r.dealer_id) { const x = dl[r.dealer_id] = dl[r.dealer_id] || { id: r.dealer_id, name: "", n: 0, pending: 0, last: null }; x.n++; if (r.status !== "Closed") x.pending++; if (!x.last || (r.case_date + r.created_at) > (x.last.case_date + x.last.created_at)) { x.last = r; x.name = r.dealer_name || x.name; } }
+  const topDealers = Object.values(dl).sort((a, b) => b.n - a.n || b.pending - a.pending).slice(0, 10);
+  // campaigns overlapping the period, with linked cases
+  const linked = countBy(rows.filter(r => r.campaign_id), r => r.campaign_id);
+  const linkedPending = countBy(rows.filter(r => r.campaign_id && r.status !== "Closed"), r => r.campaign_id);
+  const inPeriod = S.campaigns.filter(c => c.start_date <= R.to && c.end_date >= R.from || linked[c.id])
+    .sort((a, b) => (linked[b.id] || 0) - (linked[a.id] || 0) || a.end_date.localeCompare(b.end_date));
+  const t = today();
   return {
-    rows, st, days,
+    R, rows, prev, st, pst, days, topDealers, linked, linkedPending, inPeriod,
     dealers: new Set(rows.map(r => r.dealer_id).filter(Boolean)).size,
+    pending: rows.filter(r => r.status !== "Closed").sort((a, b) => (a.case_date + a.created_at).localeCompare(b.case_date + b.created_at)),
     issueBySource: pivot(rows, r => ns(r.topic), r => r.channel, S.channels, S.topics),
     issueBySub: pivot(rows, r => ns(r.topic), r => ns(r.sub_issue), S.subs, S.topics),
     stateBySource: pivot(rows, r => ns(r.state), r => r.channel, S.channels, null),
     dayBySource: pivot(rows, r => r.case_date, r => r.channel, S.channels, days),
     staffBySource: pivot(rows, r => nameOf(r.staff_email, r.staff_name), r => r.channel, S.channels, null),
-    statusBySource: pivot(rows, r => r.status, r => r.channel, S.channels, STATUSES)
+    statusBySource: pivot(rows, r => r.status, r => r.channel, S.channels, STATUSES),
+    cp: {
+      running: S.campaigns.filter(c => c.start_date <= t && c.end_date >= t).length,
+      ending: S.campaigns.filter(c => c.start_date <= t && c.end_date >= t && dayDiff(t, c.end_date) <= 7).length,
+      upcoming: S.campaigns.filter(c => c.start_date > t && dayDiff(t, c.start_date) <= 30).length,
+      cases: rows.filter(r => r.campaign_id).length
+    }
   };
 }
+function deltaEl(cur, prev, vs) {
+  if (!prev && !cur) return h("small", { class: "delta" }, "No change " + vs);
+  if (!prev) return h("small", { class: "delta" }, "None " + vs.replace(/^vs /, "the ").replace(/^the same/, "on the same"));
+  const p = Math.round((cur - prev) / prev * 100);
+  return h("small", { class: "delta", title: prev + " " + vs }, (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p) + "% " + vs + " (" + prev + ")");
+}
+function kpi(value, label, extra) { return h("div", { class: "kpi" }, h("b", { text: value }), h("span", {}, label), extra || null); }
+function stackedDays(D) {
+  const p = D.dayBySource; const max = Math.max(1, ...D.days.map(d => p.rt[d] || 0));
+  return h("div", {},
+    h("div", { class: "cols", role: "img", "aria-label": "Cases per day by source" }, D.days.map(d => {
+      const tot = p.rt[d] || 0; const cells = p.cells[d] || {};
+      return h("div", { class: "scol", style: "height:" + (tot / max * 100).toFixed(1) + "%", title: fmtShort(d) + ": " + tot + (tot ? " (" + p.cols.filter(c => cells[c]).map(c => c + " " + cells[c]).join(", ") + ")" : "") },
+        p.cols.filter(c => cells[c]).map(c => h("span", { style: "height:" + (cells[c] / tot * 100).toFixed(1) + "%;background:" + chColor(c) })));
+    })),
+    h("div", { class: "colax" }, h("span", { text: fmtShort(D.days[0]) }), h("span", { text: "Busiest day: " + max }), h("span", { text: fmtShort(D.days[D.days.length - 1]) })),
+    h("div", { class: "legend" }, p.cols.map(c => chip(c))));
+}
+function hourChart(rows) {
+  const by = countBy(rows, r => new Date(r.created_at).getHours());
+  const hrs = Object.keys(by).map(Number); const lo = Math.min(8, ...hrs), hi = Math.max(20, ...hrs);
+  const list = []; for (let x = lo; x <= hi; x++) list.push(x);
+  const max = Math.max(1, ...Object.values(by));
+  const peak = hrs.length ? hrs.reduce((a, b) => by[b] > by[a] ? b : a) : null;
+  return h("div", {},
+    h("div", { class: "cols", role: "img", "aria-label": "Cases by hour lodged" }, list.map(x => h("div", { class: "c", title: pad(x) + ":00 to " + pad(x + 1) + ":00: " + (by[x] || 0), style: "height:" + ((by[x] || 0) / max * 100).toFixed(1) + "%" }))),
+    h("div", { class: "colax" }, list.filter((x, i) => i % 2 === 0).map(x => h("span", { text: pad(x) }))),
+    peak != null ? h("p", { class: "small muted", style: "margin-top:8px" }, "Busiest hour: " + pad(peak) + ":00 to " + pad(peak + 1) + ":00 (" + plural(by[peak], "case") + "). Based on when cases were lodged.") : null);
+}
+function openTracker(f) { Object.assign(S.cf, { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "" }, f); go("cases"); }
 function drawSummary() {
-  const box = $("#rp"); if (!box) return; const D = summaryData(); const rows = D.rows;
-  const pending = (D.st.Open || 0) + (D.st["Follow-up"] || 0);
-  const kpis = h("div", { class: "kpis" },
-    h("div", { class: "kpi" }, h("b", { text: rows.length }), h("span", {}, "Cases")),
-    h("div", { class: "kpi" }, h("b", { text: D.st.Closed || 0 }), h("span", {}, "Closed")),
-    h("div", { class: "kpi" }, h("b", { text: pending }), h("span", {}, "Pending (open or follow-up)")),
-    h("div", { class: "kpi" }, h("b", { text: rows.length ? Math.round((D.st.Closed || 0) / rows.length * 100) + "%" : "–" }), h("span", {}, "Closed rate")),
-    h("div", { class: "kpi" }, h("b", { text: D.dealers }), h("span", {}, "Dealers")));
-  const daysWithCases = D.days.filter(d => D.dayBySource.rt[d]);
-  const maxDay = Math.max(1, ...D.days.map(d => D.dayBySource.rt[d] || 0));
-  const card = (title, ...kids) => h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: title })), kids);
+  const box = $("#rp"); if (!box) return; const D = summaryData(); const rows = D.rows; const R = D.R;
+  const pendingN = D.pending.length, prevPending = D.prev.filter(r => r.status !== "Closed").length;
+  const nDays = D.days.length;
+  const card = (title, aside, ...kids) => h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: title }), aside || null), kids);
+  const filtered = S.rp.channel || S.rp.topic || S.rp.state;
+  const team = role() !== "staff" && !S.rp.staff;
+
+  const casesKpis = h("div", { class: "kpis" },
+    kpi(rows.length, "Cases", deltaEl(rows.length, D.prev.length, R.vs)),
+    kpi(D.st.Closed || 0, "Closed", deltaEl(D.st.Closed || 0, D.pst.Closed || 0, R.vs)),
+    kpi(pendingN, "Pending", deltaEl(pendingN, prevPending, R.vs)),
+    kpi(rows.length ? Math.round((D.st.Closed || 0) / rows.length * 100) + "%" : "–", "Closed rate", D.prev.length ? h("small", { class: "delta" }, Math.round((D.pst.Closed || 0) / D.prev.length * 100) + "% " + R.vs) : null),
+    nDays > 1 ? kpi((rows.length / nDays).toFixed(1), "Average per day", h("small", { class: "delta" }, D.dealers + " dealers involved")) : kpi(D.dealers, "Dealers", null));
+
+  const pendingList = D.pending.length ? h("div", {}, h("div", { class: "hist" }, D.pending.slice(0, 8).map(r => h("button", { class: "hitem", type: "button", onclick: () => openCase(r) },
+      h("div", { class: "hmeta" }, h("span", { class: "cno", text: caseNo(r.case_no) }), h("span", { class: "muted", text: fmtDmy(r.case_date) }), chip(r.channel), badge(r.status), r.case_date < addDays(today(), -2) ? h("span", { class: "badge b-follow-up" }, dayDiff(r.case_date, today()) + " days old") : null),
+      h("div", { class: "small", style: "margin-top:2px", text: [r.dealer_id, r.dealer_name, [r.topic, r.sub_issue].filter(Boolean).join(" / ")].filter(Boolean).join(" · ") })))),
+      D.pending.length > 8 ? h("button", { class: "linkbtn small", style: "margin-top:10px", onclick: () => openTracker({ from: R.from, to: R.to, status: "Open", staff: role() === "staff" ? "" : S.rp.staff }) }, "See open cases in Tracker") : null)
+    : h("p", { class: "empty" }, "Nothing pending. Every case in this period is closed.");
+
+  const dealerTable = D.topDealers.length ? h("div", { class: "tblwrap" }, h("table", { class: "mx" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Dealer"), h("th", {}, "Name"), h("th", { class: "num" }, "Cases"), h("th", { class: "num" }, "Pending"), h("th", {}, "Latest issue"))),
+      h("tbody", {}, D.topDealers.map(x => h("tr", { class: "click", onclick: () => openTracker({ q: x.id, from: R.from, to: R.to }) },
+        h("td", { class: "nowrap", style: "font-weight:600", text: x.id }), h("td", { class: "nowrap clip", style: "max-width:180px", text: x.name || "" }),
+        h("td", { class: "num", style: "font-weight:700", text: x.n }), h("td", { class: "num", text: x.pending || "" }), h("td", { class: "nowrap", text: [x.last.topic, x.last.sub_issue].filter(Boolean).join(" / ") }))))))
+    : h("p", { class: "empty" }, "No dealer IDs recorded in this period.");
+
+  const cpRows = D.inPeriod.length ? h("div", { class: "tblwrap" }, h("table", { class: "mx" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Campaign"), h("th", {}, "Status"), h("th", {}, "Runs"), h("th", {}, "Progress"), h("th", { class: "num" }, "Cases"), h("th", { class: "num" }, "Pending"))),
+      h("tbody", {}, D.inPeriod.map(c => { const ph = cpPhase(c); return h("tr", { class: "click", onclick: () => showCampaign(c) },
+        h("td", {}, h("div", { style: "font-weight:600", text: c.title }), c.code ? h("div", { class: "small muted", text: c.code }) : null),
+        h("td", {}, h("span", { class: "cpb cpb-" + ph.key, text: ph.label })),
+        h("td", { class: "nowrap", text: fmtShort(c.start_date) + " → " + fmtShort(c.end_date) }),
+        h("td", { style: "min-width:150px" }, h("span", { class: "cp-bar " + ph.key, style: "margin:4px 0" }, h("span", { style: "width:" + ph.pct.toFixed(1) + "%" })), h("div", { class: "small muted", text: ph.text })),
+        h("td", { class: "num", style: "font-weight:700", text: D.linked[c.id] || "·" }), h("td", { class: "num", text: D.linkedPending[c.id] || "·" })); }))))
+    : h("p", { class: "empty" }, "No campaigns ran during this period.");
+
   put(box,
-    h("p", { class: "muted", style: "margin-bottom:12px" }, rangeLabel() + ", " + scopeLabel().toLowerCase().replace(/^whole team$/, "whole team")),
-    kpis,
+    h("p", { class: "muted", style: "margin-bottom:12px" }, R.label + ", " + (scopeLabel() === "Whole team" ? "whole team" : scopeLabel()) + (filtered ? ", filtered by " + [S.rp.channel, S.rp.topic, S.rp.state].filter(Boolean).join(", ") : "")),
+    h("h2", { class: "sec", text: "Cases" }),
+    casesKpis,
     h("div", { class: "stack" },
-      card("Main issue by source", pivotTable("Main issue", D.issueBySource)),
-      card("Main issue by sub issue", pivotTable("Main issue", D.issueBySub)),
-      h("div", { class: "grid2" }, card("By source", bars(countBy(rows, r => r.channel), S.channels, chColor)), card("By state", bars(countBy(rows, r => r.state || NOT_SET), null, null))),
-      D.days.length > 1 ? card("Cases per day",
-        h("div", { class: "cols", role: "img", "aria-label": "Cases per day" }, D.days.map(d => h("div", { class: "c", title: fmtShort(d) + ": " + (D.dayBySource.rt[d] || 0), style: "height:" + ((D.dayBySource.rt[d] || 0) / maxDay * 100).toFixed(1) + "%" }))),
-        h("div", { class: "colax" }, h("span", { text: fmtShort(D.days[0]) }), h("span", { text: fmtShort(D.days[D.days.length - 1]) })),
-        daysWithCases.length ? h("details", { style: "margin-top:12px" }, h("summary", { class: "small", style: "cursor:pointer;font-weight:600" }, "Daily breakdown by source"),
-          h("div", { style: "margin-top:10px" }, pivotTable("Date", { ...D.dayBySource, rows: daysWithCases }))) : null) : null,
-      role() !== "staff" && !S.rp.staff ? card("By staff", pivotTable("Staff", D.staffBySource)) : null,
-      card("Status by source", pivotTable("Status", D.statusBySource))));
+      card(nDays > 1 ? "Cases per day" : "Cases by hour", null, nDays > 1 ? stackedDays(D) : hourChart(rows)),
+      h("div", { class: "grid2" },
+        card("Pending cases", h("span", { class: "muted small", text: pendingN ? pendingN + " open or in follow-up" : "" }), pendingList),
+        card("Dealers with most cases", null, dealerTable)),
+      h("div", { class: "grid2" }, card("By source", null, bars(countBy(rows, r => r.channel), S.channels, chColor)), card("By state", null, bars(countBy(rows, r => r.state || NOT_SET), null, null))),
+      card("Main issue by source", null, pivotTable("Main issue", D.issueBySource)),
+      card("Main issue by sub issue", null, pivotTable("Main issue", D.issueBySub)),
+      team ? card("By staff", null, pivotTable("Staff", D.staffBySource)) : null,
+      card("Status by source", null, pivotTable("Status", D.statusBySource))),
+    h("h2", { class: "sec", style: "margin-top:28px", text: "Campaigns" }),
+    h("div", { class: "kpis" },
+      kpi(D.cp.running, "Running today"), kpi(D.cp.ending, "Ending within 7 days"), kpi(D.cp.upcoming, "Starting within 30 days"),
+      kpi(D.cp.cases, "Cases linked to a campaign", rows.length ? h("small", { class: "delta" }, Math.round(D.cp.cases / rows.length * 100) + "% of cases in this period") : null),
+      kpi(D.inPeriod.length, "Campaigns in this period")),
+    card("Campaigns in this period", h("button", { class: "linkbtn small", onclick: () => go("campaigns") }, "Open Campaigns"), cpRows));
+}
+function showCampaign(c) {
+  S.cpOpen.add(c.id); const k = cpPhase(c).key; S.cpFilter = k === "active" || k === "ending" ? "current" : k; S.cpFocus = c.id; go("campaigns");
 }
 function summaryText() {
   const D = summaryData(); const rows = D.rows;
   const lines = (o, order) => { const ks = orderKeys(o, order || Object.keys(o).sort((a, b) => o[b] - o[a])); return ks.length ? ks.map(k => "- " + k + ": " + o[k]).join("\n") : "- none"; };
-  let t = "*DMT Daily Activity Summary*\n" + rangeLabel() + (scopeLabel() !== "Whole team" ? " (" + scopeLabel() + ")" : "") + "\n\n";
-  t += "Total cases: " + rows.length + "\nClosed: " + (D.st.Closed || 0) + " | Follow-up: " + (D.st["Follow-up"] || 0) + " | Open: " + (D.st.Open || 0) + "\n\n";
+  let t = "*DMT Daily Activity Summary*\n" + D.R.label + (scopeLabel() !== "Whole team" ? " (" + scopeLabel() + ")" : "") + "\n\n";
+  t += "Total cases: " + rows.length + " (" + D.R.vs + ": " + D.prev.length + ")\nClosed: " + (D.st.Closed || 0) + " | Follow-up: " + (D.st["Follow-up"] || 0) + " | Open: " + (D.st.Open || 0) + "\n\n";
   t += "*By source*\n" + lines(D.issueBySource.ct, S.channels) + "\n\n";
   t += "*By main issue*\n" + lines(D.issueBySource.rt, null) + "\n\n";
   t += "*By sub issue*\n" + lines(D.issueBySub.ct, null);
+  if (D.topDealers.length) t += "\n\n*Dealers with most cases*\n" + D.topDealers.slice(0, 5).map(x => "- " + x.id + (x.name ? " " + x.name : "") + ": " + x.n).join("\n");
   if (role() !== "staff" && !S.rp.staff) t += "\n\n*By staff*\n" + lines(D.staffBySource.rt, null);
+  const live = S.campaigns.filter(c => c.start_date <= today() && c.end_date >= today()).sort((a, b) => a.end_date.localeCompare(b.end_date));
+  if (live.length) t += "\n\n*Campaigns running*\n" + live.map(c => "- " + c.title + " (until " + fmtShort(c.end_date) + ")" + (D.linked[c.id] ? ": " + D.linked[c.id] + " cases" : "")).join("\n");
   return t;
 }
 async function copySummary() {
@@ -1013,8 +1154,9 @@ async function exportSummary() {
   try {
     await loadXLSX();
     const D = summaryData(); const rows = D.rows;
-    const aoa = [["DMT Daily Activity Tracker | Summary"], [rangeLabel() + " | " + scopeLabel()], [],
-      ["Total cases", rows.length], ["Closed", D.st.Closed || 0], ["Follow-up", D.st["Follow-up"] || 0], ["Open", D.st.Open || 0], ["Dealers", D.dealers], [],
+    const aoa = [["DMT Daily Activity Tracker | Dashboard"], [D.R.label + " | " + scopeLabel()], [],
+      ["", "This period", D.R.vs.replace(/^vs /, "").replace(/^./, x => x.toUpperCase())],
+      ["Total cases", rows.length, D.prev.length], ["Closed", D.st.Closed || 0, D.pst.Closed || 0], ["Follow-up", D.st["Follow-up"] || 0, D.pst["Follow-up"] || 0], ["Open", D.st.Open || 0, D.pst.Open || 0], ["Dealers", D.dealers, ""], [],
       ...pivotAoa("MAIN ISSUE BY SOURCE", "MAIN ISSUE", D.issueBySource), [],
       ...pivotAoa("MAIN ISSUE BY SUB ISSUE", "MAIN ISSUE", D.issueBySub), [],
       ...pivotAoa("STATE BY SOURCE", "STATE", D.stateBySource), [],
@@ -1023,11 +1165,15 @@ async function exportSummary() {
     const daily = pivotAoa("DAILY BY SOURCE", "DATE", { ...D.dayBySource, rows: D.days.filter(d => D.dayBySource.rt[d]) });
     for (let i = 2; i < daily.length - 1; i++) daily[i][0] = fmtDmy(daily[i][0]);
     aoa.push([], ...daily);
+    aoa.push([], ["DEALERS WITH MOST CASES"], ["DEALER ID", "NAME", "CASES", "PENDING", "LATEST ISSUE"], ...D.topDealers.map(x => [x.id, x.name || "", x.n, x.pending, [x.last.topic, x.last.sub_issue].filter(Boolean).join(" / ")]));
+    const cps = [["CAMPAIGNS IN THIS PERIOD"], ["CAMPAIGN", "CODE", "STATUS", "START", "END", "FOR", "CASES", "PENDING", "MEMO REF", "PERSON IN CHARGE"],
+      ...D.inPeriod.map(c => [c.title, c.code || "", cpPhase(c).label, fmtDmy(c.start_date), fmtDmy(c.end_date), audText(c.audience), D.linked[c.id] || 0, D.linkedPending[c.id] || 0, c.memo_ref || "", c.pic || ""])];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, sheet(aoa, [24, 12, 12, 12, 12, 12, 12, 12, 12]), "Summary");
+    XLSX.utils.book_append_sheet(wb, sheet(aoa, [24, 12, 14, 12, 12, 12, 12, 12, 12]), "Summary");
+    XLSX.utils.book_append_sheet(wb, sheet(cps, [40, 12, 12, 10, 10, 20, 8, 9, 18, 20]), "Campaigns");
     XLSX.utils.book_append_sheet(wb, sheet(trackerAoa(rows), TRACKER_COLS.map(c => c[1])), "Tracker");
-    saveBook(wb, "DMT-summary-" + S.rp.from + (S.rp.from !== S.rp.to ? "-to-" + S.rp.to : "") + ".xlsx");
-    toast("Summary downloaded");
+    saveBook(wb, "DMT-dashboard-" + D.R.from + (D.R.from !== D.R.to ? "-to-" + D.R.to : "") + ".xlsx");
+    toast("Dashboard downloaded");
   } catch (e) { toast("Download failed: " + errMsg(e)); }
 }
 
@@ -1088,6 +1234,7 @@ function drawCampaigns() {
     return put(box, h("div", { class: "card" }, h("p", { class: "empty" }, msg, canManage() && !S.cpQ && S.cpFilter !== "ended" ? " Use New campaign to add one, with its memo." : "")));
   }
   put(box, list.map(campaignCard));
+  if (S.cpFocus) { const el = $("#cp-" + S.cpFocus); S.cpFocus = null; if (el) setTimeout(() => el.scrollIntoView({ block: "start", behavior: "smooth" }), 50); }
 }
 function campaignCard(c) {
   const ph = cpPhase(c); const open = S.cpOpen.has(c.id);
