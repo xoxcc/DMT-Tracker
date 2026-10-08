@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Case Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<style>
+/* Case Desk: a lodging console for frontline staff.
+   The channel is the first decision on every case, so channel colour carries through the whole UI:
+   the picker tiles, the left edge of the form, the chips in every list, the bars in the report. Everything else stays neutral. */
+:root{
+  --paper:#EEF1F4; --surface:#FFFFFF; --sunk:#E5EAEF; --ink:#141C25; --muted:#586473; --line:#D6DDE4; --line-2:#BFC9D3;
+  --primary:#141C25; --primary-ink:#FFFFFF; --danger:#B42318;
+  --ok:#1E7A46; --ok-soft:#E0F1E6; --warn:#8A5700; --warn-soft:#FAEED6; --open:#2B5FA8; --open-soft:#E2EBF7;
+  --c-call:#2D67B3; --c-whatsapp:#1C8549; --c-facebook:#5A4CC2; --c-email:#AD6C10; --c-walk-in:#AE2F6E; --c-other:#586473;
+  --font:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:8px; --r-lg:14px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0E141A; --surface:#151D25; --sunk:#1C2630; --ink:#E5EAF0; --muted:#97A3B0; --line:#27323D; --line-2:#3A4754;
+  --primary:#E5EAF0; --primary-ink:#0E141A; --danger:#FF8A7F;
+  --ok:#6DD39A; --ok-soft:#173326; --warn:#F0B95C; --warn-soft:#3A2B12; --open:#8DB3EC; --open-soft:#1A2A40;
+  --c-call:#78A8EC; --c-whatsapp:#5CCB8B; --c-facebook:#A99EF2; --c-email:#E8AE58; --c-walk-in:#EE89BA; --c-other:#97A3B0;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--open);outline-offset:2px}
+h1,h2,h3{margin:0;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:20px;font-weight:700}
+h2{font-size:22px}
+h3{font-size:16px}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.app{max-width:1200px;margin:0 auto;padding:0 20px 64px}
+[hidden]{display:none!important}
+
+/* top */
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:18px 0 12px}
+.brand{display:flex;align-items:baseline;gap:12px;margin-right:auto;flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.who .nm{font-weight:600}
+.role{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;margin:0 0 14px;font-size:14px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:22px;overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+.tab:hover{color:var(--ink)}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line-2);background:var(--surface);border-radius:var(--r);padding:8px 14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.btn.primary:hover{opacity:.9}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:default}
+.linkbtn{background:none;border:0;padding:0;color:var(--open);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],input[type=search],select,textarea{
+  width:100%;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);padding:9px 12px;min-width:0}
+textarea{resize:vertical;min-height:110px;line-height:1.5}
+select{cursor:pointer}
+input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{border-color:var(--danger)}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field>label,.lbl{font-size:13px;font-weight:600}
+.field .hint{font-size:12px;color:var(--muted)}
+.field .err{font-size:13px;color:var(--danger);min-height:0}
+.field .err:empty{display:none}
+.opt{font-weight:400;color:var(--muted)}
+input::placeholder{text-transform:none}
+
+/* layout */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:18px}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.lodge{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:20px;align-items:start}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.lodge,.grid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.row2{grid-template-columns:minmax(0,1fr)}.app{padding:0 12px 48px}}
+.head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:14px}
+
+/* channel picker: the one bold element */
+.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;margin-bottom:16px}
+.chtile{--tc:var(--c-other);display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;text-align:left;font-weight:600;transition:background .12s,border-color .12s}
+.chtile svg{width:22px;height:22px;fill:none;stroke:var(--tc);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chtile:hover{border-color:var(--tc)}
+.chtile[aria-pressed=true]{background:var(--tc);border-color:var(--tc);color:var(--surface)}
+.chtile[aria-pressed=true] svg{stroke:var(--surface)}
+.formcard{border-left:5px solid var(--ch,var(--c-other))}
+.status-set{display:flex;flex-wrap:wrap;gap:6px}
+.status-set label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:14px;font-weight:600}
+.status-set input{accent-color:var(--ink);margin:0}
+.status-set label:has(input:checked){background:var(--sunk);border-color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.kbd{font-size:12px;color:var(--muted)}
+
+/* chips & badges */
+.chip{--tc:var(--c-other);display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap}
+.chip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--tc);flex:none}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.b-open{background:var(--open-soft);color:var(--open)}
+.b-follow-up{background:var(--warn-soft);color:var(--warn)}
+.b-closed{background:var(--ok-soft);color:var(--ok)}
+.cno{font-weight:600;white-space:nowrap}
+
+/* history */
+.hist{display:flex;flex-direction:column}
+.hitem{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:12px 0;cursor:pointer}
+.hitem:first-child{border-top:0}
+.hitem:hover .hdesc{color:var(--ink)}
+.hmeta{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px}
+.hdesc{margin-top:4px;color:var(--muted);font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.match{font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:14px;padding:6px 0}
+
+/* tables */
+.tblwrap{overflow-x:auto;margin:0 -4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:8px;border-bottom:1px solid var(--line-2);white-space:nowrap}
+td{padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--sunk)}
+.clip{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nowrap{white-space:nowrap}
+
+/* filters */
+.filters{display:grid;grid-template-columns:2fr repeat(6,minmax(0,1fr));gap:10px;align-items:end;margin-bottom:16px}
+@media (max-width:1000px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.filters .q{grid-column:1/-1}}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
+
+/* report */
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{border:1px solid var(--line-2);background:var(--surface);border-radius:999px;padding:5px 12px;font-weight:600;font-size:14px;cursor:pointer}
+.presets button[aria-pressed=true]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.kpi b{display:block;font-size:30px;font-weight:700;line-height:1.15}
+.kpi span{font-size:13px;color:var(--muted)}
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:14px}
+.bar .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{display:block;height:12px;background:var(--sunk);border-radius:6px;overflow:hidden}
+.bar .bf{display:block;height:100%;border-radius:6px;background:var(--ink)}
+.bar .bn{text-align:right;font-weight:600}
+.cols{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:8px}
+.cols .c{flex:1;min-width:3px;background:var(--ink);border-radius:3px 3px 0 0;position:relative}
+.cols .c:hover{opacity:.75}
+.colax{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px}
+
+/* dialog */
+dialog{border:0;border-radius:var(--r-lg);padding:0;width:min(680px,calc(100% - 24px));max-height:calc(100% - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(10,15,20,.5)}
+.dlg{padding:22px;display:flex;flex-direction:column;gap:14px}
+.dlg-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.meta{font-size:13px;color:var(--muted)}
+
+/* sign in */
+.welcome{max-width:400px;margin:8vh auto 0}
+.welcome .card{display:flex;flex-direction:column;gap:14px;padding:26px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:var(--r);font-weight:600;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
+.loading{color:var(--muted);padding:40px 0;text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top"></header>
+  <div class="banner" id="banner" hidden></div>
+  <nav class="tabs" id="tabs" role="tablist" hidden></nav>
+  <main id="main"><div class="loading">Loading…</div></main>
+</div>
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+"use strict";
+/* ================= config ================= */
+const CFG = window.CRM_CONFIG || {};
+const APP_NAME = CFG.appName || "Case Desk";
+// Capture the auth link type before Supabase reads and clears the URL hash.
+const HASH = location.hash || "";
+const AUTH_TYPE = (HASH.match(/[#&]type=([a-z_]+)/) || [])[1] || "";
+const HASH_ERR = decodeURIComponent(((HASH.match(/error_description=([^&]+)/) || [])[1] || "").replace(/\+/g, " "));
+const LIVE = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/i.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
+const DEFAULT_CHANNELS = ["Call", "WhatsApp", "Facebook", "Email", "Walk-In"];
+const STATUSES = ["Open", "Follow-up", "Closed"];
+const ROLES = { staff: "Staff", supervisor: "Supervisor", manager: "Manager" };
+const PAGE = 50;
+
+const ICONS = {
+  call: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  whatsapp: '<path d="M20.5 12a8.5 8.5 0 0 1-12.4 7.5L3.5 20.5l1-4.4A8.5 8.5 0 1 1 20.5 12z"/><path d="M9 10h6M9 13.5h4"/>',
+  facebook: '<rect x="3" y="4" width="18" height="13" rx="3"/><path d="M8 17v3.5l4-3.5"/><circle cx="12" cy="10.5" r="2.3"/>',
+  email: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',
+  "walk-in": '<circle cx="13" cy="4.5" r="2"/><path d="m9 21 2.5-6.5L14 16v5M8 11l3-3.5h3l2.5 3.5M11.5 14.5 13 8"/>',
+  other: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12h8"/>'
+};
+const CH_META = {
+  call: { label: "Caller number", ph: "e.g. 012-345 6789", type: "tel", phone: true },
+  whatsapp: { label: "WhatsApp number", ph: "e.g. 6012-345 6789", type: "tel", phone: true },
+  facebook: { label: "Facebook name or profile link", ph: "e.g. Ahmad Razak or facebook.com/…", type: "text" },
+  email: { label: "Email address", ph: "name@example.com", type: "email", email: true },
+  "walk-in": { label: "Phone number", ph: "e.g. 012-345 6789", type: "tel", phone: true }
+};
+
+/* ================= utils ================= */
+const $ = s => document.querySelector(s);
+function h(tag, p, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(p || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "text") el.textContent = v;
+    else if (k === "html") el.innerHTML = v; // trusted icon markup only
+    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) { if (c == null || c === false) continue; el.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return el;
+}
+function put(el, ...kids) { el.replaceChildren(...kids.flat(Infinity).filter(x => x != null && x !== false)); }
+const pad = n => String(n).padStart(2, "0");
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function today() { return iso(new Date()); }
+function parseD(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseD(s); d.setDate(d.getDate() + n); return iso(d); }
+function startISO(s) { return parseD(s).toISOString(); }
+function fmtDate(s) { const d = parseD(s); return DAY[d.getDay()] + ", " + pad(d.getDate()) + " " + MON[d.getMonth()] + " " + d.getFullYear(); }
+function fmtShort(s) { const d = parseD(s); return pad(d.getDate()) + " " + MON[d.getMonth()]; }
+function fmtStamp(t) { if (!t) return ""; const d = new Date(t); return pad(d.getDate()) + " " + MON[d.getMonth()] + ", " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+function fmtTime(t) { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+function localDay(t) { return iso(new Date(t)); }
+function caseNo(n) { return "#" + String(n ?? "").padStart(5, "0"); }
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function errMsg(e) { return (e && (e.message || e.error_description)) || String(e); }
+function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); }
+function showBanner(m) { const b = $("#banner"); b.textContent = m; b.hidden = false; }
+function chKey(c) { return String(c || "").toLowerCase().replace(/\s+/g, "-"); }
+function chMeta(c) { return CH_META[chKey(c)] || { label: "Contact", ph: "Phone number, email or name", type: "text" }; }
+function chColor(c) { return CH_META[chKey(c)] ? "var(--c-" + chKey(c) + ")" : "var(--c-other)"; }
+function chIcon(c) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[chKey(c)] || ICONS.other) + "</svg>"; }
+function chip(c) { return h("span", { class: "chip", style: "--tc:" + chColor(c) }, c); }
+function badge(s) { return h("span", { class: "badge b-" + chKey(s) }, s); }
+function nameOf(email, fallback) { const m = S.members.find(x => x.email === email); return m ? m.name : (fallback || email || "—"); }
+
+// Same rule as crm_norm_contact() in schema.sql, so history lookups match what the database stores.
+function normContact(channel, c) {
+  c = String(c || "").trim(); if (!c) return "";
+  const d = c.replace(/\D/g, "");
+  const phoneish = ["call", "whatsapp", "walk-in"].includes(chKey(channel)) || /^[\d\s+()-]+$/.test(c);
+  if (phoneish && d.length >= 7) return d.startsWith("60") ? "0" + d.slice(2) : d;
+  return c.toLowerCase();
+}
+function contactProblem(channel, c) {
+  const m = chMeta(channel); c = String(c || "").trim();
+  if (!c) return "Enter the " + m.label.toLowerCase() + ".";
+  if (m.phone) { const n = normContact(channel, c); if (!/^\d{9,12}$/.test(n)) return "Enter a full phone number, e.g. 012-345 6789."; }
+  if (m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c)) return "Enter a valid email address.";
+  return "";
+}
+
+/* ================= state ================= */
+function blankDraft(ch) { return { channel: ch || null, topic: "", contact: "", dealer: "", desc: "", status: "Open", resolution: "" }; }
+const S = {
+  api: null, email: "", me: null, members: [], channels: DEFAULT_CHANNELS.slice(), topics: [],
+  tab: null, previewRole: "",
+  draft: blankDraft(null), hist: { key: "", rows: [], loading: false, err: "" }, mine: [],
+  cf: { q: "", channel: "", topic: "", status: "", staff: "", from: addDays(today(), -29), to: today() },
+  cases: { rows: [], count: 0, loading: false },
+  rp: { preset: "today", from: today(), to: today(), staff: "" }, rpRows: [], rpLoading: false
+};
+function role() { return S.previewRole || (S.me && S.me.role) || "staff"; }
+function canEdit(r) { return role() !== "staff" || r.staff_email === S.email; }
+
+/* ================= data: Supabase ================= */
+function q2(v) { return '"' + String(v).replace(/["\\*]/g, "") + '"'; } // quoted PostgREST filter value
+function supaApi() {
+  const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  const CASES = "crm_cases";
+  function filt(q, f) {
+    if (f.from) q = q.gte("created_at", startISO(f.from));
+    if (f.to) q = q.lt("created_at", startISO(addDays(f.to, 1)));
+    if (f.channel) q = q.eq("channel", f.channel);
+    if (f.topic === "__none") q = q.is("topic", null); else if (f.topic) q = q.eq("topic", f.topic);
+    if (f.status) q = q.eq("status", f.status);
+    if (f.staff) q = q.eq("staff_email", f.staff);
+    const s = (f.q || "").trim();
+    if (s) {
+      const parts = ["description", "contact", "dealer_id", "topic"].map(c => c + ".ilike." + q2("*" + s + "*"));
+      const digits = s.replace(/\D/g, "");
+      if (digits.length >= 4) parts.push("contact_norm.ilike." + q2("*" + (digits.startsWith("60") ? digits.slice(2) : digits.replace(/^0/, "")) + "*"));
+      const n = s.replace(/^#/, "");
+      if (/^\d{1,9}$/.test(n)) parts.push("case_no.eq." + Number(n));
+      q = q.or(parts.join(","));
+    }
+    return q;
+  }
+  return {
+    sb,
+    async session() { const { data } = await sb.auth.getSession(); return data.session; },
+    async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+    async microsoft() { const { error } = await sb.auth.signInWithOAuth({ provider: "azure", options: { scopes: "email openid profile", redirectTo: location.origin + location.pathname } }); if (error) throw error; },
+    async reset(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; },
+    async setPassword(pw) { const { error } = await sb.auth.updateUser({ password: pw }); if (error) throw error; },
+    async signOut() { await sb.auth.signOut(); location.replace(location.pathname); },
+    async members() { const { data, error } = await sb.from("crm_members").select("*").order("sort").order("name"); if (error) throw error; return data || []; },
+    async settings() { const { data, error } = await sb.from("crm_settings").select("*").eq("id", 1).maybeSingle(); if (error) throw error; return data; },
+    async saveSettings(s) { const { error } = await sb.from("crm_settings").update({ topics: s.topics, channels: s.channels, updated_at: new Date().toISOString() }).eq("id", 1); if (error) throw error; },
+    async saveMember(m) { const { error } = await sb.from("crm_members").upsert({ email: m.email, name: m.name, role: m.role, active: m.active, sort: m.sort ?? 0 }); if (error) throw error; },
+    async listCases(f, off, lim) {
+      const { data, error, count } = await filt(sb.from(CASES).select("*", { count: "exact" }), f).order("created_at", { ascending: false }).range(off, off + lim - 1);
+      if (error) throw error; return { rows: data || [], count: count || 0 };
+    },
+    async reportCases(from, to, staff) {
+      const out = [];
+      for (let off = 0; off < 100000; off += 1000) {
+        let q = sb.from(CASES).select("id,case_no,created_at,channel,topic,status,staff_email,staff_name,dealer_id").gte("created_at", startISO(from)).lt("created_at", startISO(addDays(to, 1))).order("created_at", { ascending: true }).range(off, off + 999);
+        if (staff) q = q.eq("staff_email", staff);
+        const { data, error } = await q; if (error) throw error;
+        out.push(...data); if (data.length < 1000) break;
+      }
+      return out;
+    },
+    async history(norm, dealer) {
+      const parts = []; if (norm) parts.push("contact_norm.eq." + q2(norm)); if (dealer) parts.push("dealer_id.eq." + q2(dealer));
+      const { data, error } = await sb.from(CASES).select("*").or(parts.join(",")).order("created_at", { ascending: false }).limit(15);
+      if (error) throw error; return data || [];
+    },
+    async saveCase(r) {
+      const row = { channel: r.channel, topic: r.topic, contact: r.contact, contact_norm: r.contact_norm, dealer_id: r.dealer_id, description: r.description, status: r.status, resolution: r.resolution };
+      const res = r.id ? await sb.from(CASES).update(row).eq("id", r.id).select().single() : await sb.from(CASES).insert(row).select().single();
+      if (res.error) throw res.error; return res.data;
+    },
+    async deleteCase(id) { const { error } = await sb.from(CASES).delete().eq("id", id); if (error) throw error; },
+    subscribe(cb) { sb.channel("crm-cases").on("postgres_changes", { event: "*", schema: "public", table: CASES }, cb).subscribe(); }
+  };
+}
+
+/* ================= data: preview (no database) ================= */
+function demoApi() {
+  const me = "you@demo.local";
+  const members = [
+    { email: me, name: "You (preview)", role: "manager", active: true, sort: 0 },
+    { email: "aina@demo.local", name: "Aina", role: "staff", active: true, sort: 1 },
+    { email: "farid@demo.local", name: "Farid", role: "staff", active: true, sort: 2 },
+    { email: "kavitha@demo.local", name: "Kavitha", role: "staff", active: true, sort: 3 },
+    { email: "mei@demo.local", name: "Mei Ling", role: "supervisor", active: true, sort: 4 }
+  ];
+  const settings = { channels: DEFAULT_CHANNELS.slice(), topics: ["Sample topic A", "Sample topic B", "Sample topic C", "Sample topic D"] };
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const cases = []; let seq = 0;
+  const descs = ["Dealer unable to log in to the portal after password change.", "Asking when this month's incentive will be credited.", "Number port-in still pending after 3 days.", "Request to update registered owner details.", "Customer asking about plan options and coverage.", "Reload made but balance not updated."];
+  for (let i = 20; i >= 0; i--) {
+    const n = 2 + Math.floor(rnd() * 6);
+    for (let j = 0; j < n; j++) {
+      const ch = pick(["Call", "Call", "WhatsApp", "WhatsApp", "Email", "Facebook", "Walk-In"]); const st = pick(members);
+      const d = parseD(addDays(today(), -i)); d.setHours(9 + Math.floor(rnd() * 9), Math.floor(rnd() * 60));
+      const phone = "01" + Math.floor(10000000 + rnd() * 89999999);
+      const contact = ch === "Email" ? "customer" + Math.floor(rnd() * 90) + "@mail.com" : ch === "Facebook" ? pick(["Ahmad R.", "Siti N.", "Jason T."]) : phone;
+      cases.push({ id: "d" + (++seq), case_no: seq, created_at: d.toISOString(), channel: ch, topic: pick(settings.topics), contact, contact_norm: normContact(ch, contact), dealer_id: rnd() < .7 ? "D" + (100200 + Math.floor(rnd() * 40)) : null, description: pick(descs), status: i > 2 ? pick(["Closed", "Closed", "Closed", "Follow-up"]) : pick(STATUSES), resolution: null, staff_email: st.email, staff_name: st.name, updated_at: d.toISOString(), updated_by: st.email });
+    }
+  }
+  function match(r, f) {
+    const day = localDay(r.created_at);
+    if (f.from && day < f.from) return false; if (f.to && day > f.to) return false;
+    if (f.channel && r.channel !== f.channel) return false;
+    if (f.topic === "__none" ? r.topic : (f.topic && r.topic !== f.topic)) return false;
+    if (f.status && r.status !== f.status) return false;
+    if (f.staff && r.staff_email !== f.staff) return false;
+    const s = (f.q || "").trim().toLowerCase();
+    if (s) {
+      const digits = s.replace(/\D/g, "");
+      const hit = [r.description, r.contact, r.dealer_id, r.topic].some(x => String(x || "").toLowerCase().includes(s))
+        || (digits.length >= 4 && r.contact_norm.includes(digits.replace(/^60/, "").replace(/^0/, "")))
+        || String(r.case_no) === s.replace(/^#/, "");
+      if (!hit) return false;
+    }
+    return true;
+  }
+  const sorted = () => cases.slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return {
+    async session() { return { user: { email: me } }; },
+    async signOut() { location.reload(); },
+    async members() { return members.map(m => ({ ...m })); },
+    async settings() { return { ...settings, topics: settings.topics.slice(), channels: settings.channels.slice() }; },
+    async saveSettings(s) { settings.topics = s.topics; settings.channels = s.channels; },
+    async saveMember(m) { const i = members.findIndex(x => x.email === m.email); if (i >= 0) members[i] = { ...members[i], ...m }; else members.push({ ...m }); },
+    async listCases(f, off, lim) { const all = sorted().filter(r => match(r, f)); return { rows: all.slice(off, off + lim), count: all.length }; },
+    async reportCases(from, to, staff) { return cases.filter(r => match(r, { from, to, staff })); },
+    async history(norm, dealer) { return sorted().filter(r => (norm && r.contact_norm === norm) || (dealer && r.dealer_id === dealer)).slice(0, 15); },
+    async saveCase(r) {
+      const now = new Date().toISOString();
+      const clean = { ...r, contact_norm: normContact(r.channel, r.contact), dealer_id: r.dealer_id ? r.dealer_id.toUpperCase() : null };
+      if (r.id) { const i = cases.findIndex(x => x.id === r.id); cases[i] = { ...cases[i], ...clean, updated_at: now, updated_by: me }; return cases[i]; }
+      const row = { ...clean, id: "d" + (++seq), case_no: seq, created_at: now, updated_at: now, updated_by: me, staff_email: me, staff_name: members[0].name };
+      cases.push(row); return row;
+    },
+    async deleteCase(id) { const i = cases.findIndex(x => x.id === id); if (i >= 0) cases.splice(i, 1); },
+    subscribe() {}
+  };
+}
+
+/* ================= boot & auth ================= */
+async function boot() {
+  document.title = APP_NAME;
+  S.api = LIVE ? supaApi() : demoApi();
+  if (!LIVE) showBanner("Preview mode: not connected to a database, so nothing is saved. Add your Supabase details to config.js to go live.");
+  if (LIVE) S.api.sb.auth.onAuthStateChange(ev => { if (ev === "PASSWORD_RECOVERY") renderSetPassword(); });
+  let session = null;
+  try { session = await S.api.session(); } catch (e) { console.error(e); }
+  if (!session) return renderSignIn(HASH_ERR);
+  if (AUTH_TYPE === "recovery" || AUTH_TYPE === "invite") return renderSetPassword();
+  await enter(session);
+}
+
+async function enter(session) {
+  S.email = String(session.user.email || "").toLowerCase();
+  put($("#main"), h("div", { class: "loading" }, "Loading…"));
+  try { await loadCore(); }
+  catch (e) { console.error(e); return renderProblem("The case data didn’t load. Check your connection and reload. If it keeps happening, the database setup (schema.sql) may be incomplete.", e); }
+  S.me = S.members.find(m => m.active && m.email === S.email) || null;
+  if (!S.me) return renderNoAccess();
+  S.draft = blankDraft(S.channels[0]);
+  S.rp.staff = ""; S.cf.staff = "";
+  S.tab = "lodge";
+  renderTop(); go("lodge");
+  S.api.subscribe(() => scheduleRefresh());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleRefresh(); });
+}
+
+async function loadCore() {
+  const [members, settings] = await Promise.all([S.api.members(), S.api.settings()]);
+  S.members = members.map(m => ({ ...m, email: String(m.email).toLowerCase() }));
+  S.channels = settings && Array.isArray(settings.channels) && settings.channels.length ? settings.channels : DEFAULT_CHANNELS.slice();
+  S.topics = settings && Array.isArray(settings.topics) ? settings.topics : [];
+}
+
+function centerCard(...kids) { $("#tabs").hidden = true; put($("#top"), h("div", { class: "brand" }, h("h1", { text: APP_NAME }))); put($("#main"), h("div", { class: "welcome" }, h("div", { class: "card" }, kids))); }
+
+function renderSignIn(err) {
+  const email = h("input", { type: "email", id: "si-email", autocomplete: "username", required: true });
+  const pw = h("input", { type: "password", id: "si-pw", autocomplete: "current-password", required: true });
+  const msg = h("p", { class: "small", style: "color:var(--danger)", text: err || "" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
+  const form = h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+    e.preventDefault(); msg.textContent = ""; btn.disabled = true;
+    try { await S.api.signIn(email.value.trim(), pw.value); await enter(await S.api.session()); }
+    catch (x) { msg.textContent = /invalid/i.test(errMsg(x)) ? "That email and password don’t match. Check both, or reset your password below." : "Sign-in failed: " + errMsg(x); btn.disabled = false; }
+  } },
+    h("div", { class: "field" }, h("label", { for: "si-email" }, "Work email"), email),
+    h("div", { class: "field" }, h("label", { for: "si-pw" }, "Password"), pw),
+    btn, msg);
+  centerCard(
+    h("h2", { text: "Sign in" }),
+    h("p", { class: "muted small", text: "Use the email your manager added to the team list." }),
+    form,
+    h("button", { class: "linkbtn", style: "align-self:flex-start", onclick: renderReset }, "Forgot or never set a password?"),
+    CFG.microsoftSignIn ? [h("div", { class: "or" }, "or"), h("button", { class: "btn", onclick: async () => { try { await S.api.microsoft(); } catch (x) { msg.textContent = "Microsoft sign-in didn’t start: " + errMsg(x); } } }, "Sign in with Microsoft")] : null
+  );
+  setTimeout(() => email.focus(), 0);
+}
+
+function renderReset() {
+  const email = h("input", { type: "email", id: "rs-email", autocomplete: "username", required: true });
+  const msg = h("p", { class: "small" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Send reset link");
+  centerCard(
+    h("h2", { text: "Set or reset your password" }),
+    h("p", { class: "muted small", text: "We’ll email you a link. Open it on this device to choose a new password." }),
+    h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+      e.preventDefault(); btn.disabled = true; msg.style.color = "";
+      try { await S.api.reset(email.value.trim()); msg.textContent = "Link sent. Check your inbox (and junk folder)."; }
+      catch (x) { msg.style.color = "var(--danger)"; msg.textContent = "Couldn’t send the link: " + errMsg(x); btn.disabled = false; }
+    } }, h("div", { class: "field" }, h("label", { for: "rs-email" }, "Work email"), email), btn, msg),
+    h("button", { class: "linkbtn", style: "align-self:flex-start", onclick: () => renderSignIn() }, "Back to sign in"));
+  setTimeout(() => email.focus(), 0);
+}
+
+function renderSetPassword() {
+  const a = h("input", { type: "password", id: "np1", autocomplete: "new-password", minlength: "8", required: true });
+  const b = h("input", { type: "password", id: "np2", autocomplete: "new-password", required: true });
+  const msg = h("p", { class: "small", style: "color:var(--danger)" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Save password");
+  centerCard(
+    h("h2", { text: "Choose a password" }),
+    h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+      e.preventDefault(); msg.textContent = "";
+      if (a.value.length < 8) return msg.textContent = "Use at least 8 characters.";
+      if (a.value !== b.value) return msg.textContent = "The two passwords don’t match.";
+      btn.disabled = true;
+      try { await S.api.setPassword(a.value); history.replaceState(null, "", location.pathname); toast("Password saved"); await enter(await S.api.session()); }
+      catch (x) { msg.textContent = "Couldn’t save the password: " + errMsg(x); btn.disabled = false; }
+    } }, h("div", { class: "field" }, h("label", { for: "np1" }, "New password"), a, h("span", { class: "hint" }, "At least 8 characters.")),
+       h("div", { class: "field" }, h("label", { for: "np2" }, "Type it again"), b), btn, msg));
+  setTimeout(() => a.focus(), 0);
+}
+
+function renderNoAccess() {
+  centerCard(h("h2", { text: "You’re not on the team list yet" }),
+    h("p", { class: "muted" }, "Signed in as ", h("b", { text: S.email || "(no email)" }), ". Ask your manager to add this exact email under Team & lists, then reload."),
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => location.reload() }, "Reload"), h("button", { class: "btn", onclick: () => S.api.signOut() }, "Sign out")));
+}
+function renderProblem(m, e) {
+  centerCard(h("h2", { text: "The app couldn’t load" }), h("p", { class: "muted", text: m }),
+    e ? h("pre", { class: "small", style: "white-space:pre-wrap;background:var(--sunk);padding:10px;border-radius:8px;margin:0", text: errMsg(e) }) : null,
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => location.reload() }, "Reload"), h("button", { class: "btn", onclick: () => S.api.signOut() }, "Sign out")));
+}
+
+/* ================= shell ================= */
+function tabsFor() {
+  const r = role();
+  const t = [["lodge", "Lodge case"], ["cases", r === "staff" ? "Cases" : "All cases"], ["report", r === "staff" ? "My report" : "Report"]];
+  if (r === "manager") t.push(["settings", "Team & lists"]);
+  return t;
+}
+function renderTop() {
+  const preview = !LIVE ? h("label", { class: "small muted", style: "display:flex;gap:6px;align-items:center" }, "Preview as",
+    h("select", { style: "width:auto;padding:4px 8px", onchange: e => { S.previewRole = e.target.value === "manager" ? "" : e.target.value; if (!tabsFor().some(t => t[0] === S.tab)) S.tab = "lodge"; renderTop(); go(S.tab); } },
+      Object.entries(ROLES).map(([k, l]) => h("option", { value: k, selected: role() === k ? true : null }, l)))) : null;
+  put($("#top"),
+    h("div", { class: "brand" }, h("h1", { text: APP_NAME }), h("span", { class: "muted small", text: fmtDate(today()) })),
+    h("div", { class: "who" }, preview, h("span", { class: "nm", text: S.me.name }), h("span", { class: "role", text: ROLES[role()] }),
+      h("button", { class: "btn sm", onclick: () => S.api.signOut() }, "Sign out")));
+  renderTabs();
+}
+function renderTabs() {
+  const tabs = $("#tabs"); tabs.hidden = false;
+  put(tabs, tabsFor().map(([k, l]) => h("button", { class: "tab", role: "tab", "aria-selected": String(S.tab === k), onclick: () => go(k) }, l)));
+}
+function go(k) { S.tab = k; renderTabs(); ({ lodge: renderLodge, cases: renderCases, report: renderReport, settings: renderSettings })[k](); }
+
+const scheduleRefresh = debounce(async () => {
+  if (!S.me) return;
+  try {
+    if (S.tab === "lodge") { await loadMine(); renderMine(); }
+    else if (S.tab === "cases" && !$("#dlg").open) await reloadCases();
+    else if (S.tab === "report") await loadReport();
+  } catch (e) { console.warn("refresh failed", e); }
+}, 700);
+
+/* ================= lodge ================= */
+function renderLodge() {
+  const d = S.draft; if (!d.channel || !S.channels.includes(d.channel)) d.channel = S.channels[0];
+  const m = chMeta(d.channel);
+
+  const tiles = h("div", { class: "channels", role: "group", "aria-label": "Channel" },
+    S.channels.map((c, i) => h("button", { type: "button", class: "chtile", "aria-pressed": String(d.channel === c), style: "--tc:" + chColor(c), title: i < 9 ? "Alt+" + (i + 1) : null,
+      onclick: () => setChannel(c), html: chIcon(c) + "<span>" + c.replace(/</g, "&lt;") + "</span>" })));
+
+  let topicEl;
+  if (S.topics.length) {
+    topicEl = h("select", { id: "f-topic", onchange: e => { d.topic = e.target.value; clearErr("topic"); } },
+      h("option", { value: "" }, "Choose a topic"), S.topics.map(t => h("option", { value: t }, t)));
+    topicEl.value = d.topic;
+  } else {
+    topicEl = h("p", { class: "small muted", style: "padding:9px 0" }, role() === "manager" ? "No topics yet. Add them under Team & lists." : "No topics yet. Your manager will add them.");
+  }
+  const contact = h("input", { type: m.type, id: "f-contact", inputmode: m.phone ? "tel" : null, autocomplete: "off", placeholder: m.ph, value: d.contact,
+    oninput: e => { d.contact = e.target.value; clearErr("contact"); histSoon(); } });
+  const dealer = h("input", { type: "text", id: "f-dealer", autocomplete: "off", placeholder: "e.g. D123456", value: d.dealer, style: "text-transform:uppercase",
+    oninput: e => { d.dealer = e.target.value; histSoon(); } });
+  const desc = h("textarea", { id: "f-desc", rows: "5", placeholder: "What did the caller ask for, and what did you tell them?", oninput: e => { d.desc = e.target.value; clearErr("desc"); } });
+  desc.value = d.desc;
+  const statusSet = h("div", { class: "status-set", role: "radiogroup", "aria-label": "Status" },
+    STATUSES.map(s => h("label", {}, h("input", { type: "radio", name: "f-status", value: s, checked: d.status === s ? true : null,
+      onchange: () => { d.status = s; $("#w-res").hidden = s === "Open"; } }), s)));
+  const res = h("textarea", { id: "f-res", rows: "2", placeholder: "Action taken or next step", style: "min-height:64px", oninput: e => d.resolution = e.target.value });
+  res.value = d.resolution;
+
+  const saveBtn = h("button", { class: "btn primary", id: "save-btn", type: "button", onclick: saveDraft }, "Save case");
+  const form = h("div", { class: "card formcard stack", style: "--ch:" + chColor(d.channel) },
+    h("div", { class: "row2" },
+      fieldWrap("topic", "Topic", topicEl),
+      fieldWrap("dealer", h("span", {}, "Dealer ID ", h("span", { class: "opt" }, "(if any)")), dealer)),
+    fieldWrap("contact", m.label, contact),
+    fieldWrap("desc", "Call description", desc),
+    h("div", { class: "field" }, h("span", { class: "lbl" }, "Status"), statusSet),
+    h("div", { class: "field", id: "w-res", hidden: d.status === "Open" ? true : null }, h("label", { for: "f-res" }, "Action taken ", h("span", { class: "opt" }, "(optional)")), res),
+    h("div", { class: "actions" }, saveBtn, h("button", { class: "btn", type: "button", onclick: () => { S.draft = blankDraft(d.channel); S.hist = { key: "", rows: [] }; renderLodge(); focusContact(); } }, "Clear"),
+      h("span", { class: "kbd" }, "Ctrl+Enter saves. Alt+1–" + Math.min(9, S.channels.length) + " switches channel.")));
+
+  put($("#main"),
+    h("div", { class: "lodge" },
+      h("div", {}, tiles, form),
+      h("aside", { class: "card" }, h("div", { class: "head", style: "margin-bottom:6px" }, h("h3", { text: "Earlier cases" })), h("div", { id: "hist" }))),
+    h("section", { class: "card", style: "margin-top:20px" }, h("div", { class: "head" }, h("h3", { text: "Your cases today" }), h("span", { class: "muted small", id: "mine-count" })), h("div", { id: "mine" })));
+  renderHist(); renderMine();
+  loadMine().then(renderMine).catch(e => console.warn(e));
+}
+function fieldWrap(key, label, el) {
+  return h("div", { class: "field", id: "w-" + key }, h("label", { for: el.id || null }, label), el, h("span", { class: "err", id: "e-" + key }));
+}
+function clearErr(k) { const e = $("#e-" + k); if (e) e.textContent = ""; const w = $("#w-" + k); w && w.querySelector("[aria-invalid]")?.removeAttribute("aria-invalid"); }
+function focusContact() { setTimeout(() => $("#f-contact")?.focus(), 0); }
+function setChannel(c) { S.draft.channel = c; renderLodge(); focusContact(); histSoon(); }
+
+async function saveDraft() {
+  const d = S.draft; const errs = {};
+  if (S.topics.length && !d.topic) errs.topic = "Choose a topic.";
+  const cp = contactProblem(d.channel, d.contact); if (cp) errs.contact = cp;
+  if (!d.desc.trim()) errs.desc = "Describe what the case is about.";
+  const keys = Object.keys(errs);
+  for (const k of ["topic", "contact", "desc"]) { const e = $("#e-" + k); if (e) e.textContent = errs[k] || ""; const inp = $("#w-" + k)?.querySelector("input,select,textarea"); if (inp) { if (errs[k]) inp.setAttribute("aria-invalid", "true"); else inp.removeAttribute("aria-invalid"); } }
+  if (keys.length) { $("#w-" + keys[0])?.querySelector("input,select,textarea")?.focus(); return; }
+  const btn = $("#save-btn"); btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const row = await S.api.saveCase({ channel: d.channel, topic: d.topic || null, contact: d.contact.trim(), contact_norm: normContact(d.channel, d.contact),
+      dealer_id: d.dealer.trim().toUpperCase() || null, description: d.desc.trim(), status: d.status, resolution: d.resolution.trim() || null });
+    toast("Case " + caseNo(row.case_no) + " saved");
+    S.draft = blankDraft(d.channel); S.hist = { key: "", rows: [] };
+    renderLodge(); focusContact();
+  } catch (e) { toast("Case not saved: " + errMsg(e)); btn.disabled = false; btn.textContent = "Save case"; }
+}
+
+const histSoon = debounce(loadHist, 400);
+async function loadHist() {
+  if (S.tab !== "lodge") return;
+  const d = S.draft;
+  const n = normContact(d.channel, d.contact); const useN = n.length >= 6 ? n : "";
+  const dl = d.dealer.trim().toUpperCase(); const useD = dl.length >= 3 ? dl : "";
+  const key = useN + "|" + useD;
+  if (key === S.hist.key) return;
+  S.hist = { key, rows: [], loading: !!(useN || useD), err: "", n: useN, d: useD }; renderHist();
+  if (!useN && !useD) return;
+  try { const rows = await S.api.history(useN, useD); if (S.hist.key !== key) return; S.hist.rows = rows; }
+  catch (e) { if (S.hist.key !== key) return; S.hist.err = errMsg(e); }
+  S.hist.loading = false; renderHist();
+}
+function renderHist() {
+  const box = $("#hist"); if (!box) return;
+  const H = S.hist;
+  if (!H.key || H.key === "|") return put(box, h("p", { class: "empty" }, "Type a number, email or dealer ID and earlier cases from the same person or dealer appear here."));
+  if (H.loading) return put(box, h("p", { class: "empty" }, "Looking up earlier cases…"));
+  if (H.err) return put(box, h("p", { class: "empty", style: "color:var(--danger)" }, "Lookup failed: " + H.err));
+  if (!H.rows.length) return put(box, h("p", { class: "empty" }, "No earlier cases. This looks like a first contact."));
+  put(box, h("p", { class: "small muted", style: "margin-bottom:4px" }, H.rows.length + (H.rows.length === 15 ? "+ " : " ") + (H.rows.length === 1 ? "case" : "cases") + " found"),
+    h("div", { class: "hist" }, H.rows.map(r => h("button", { class: "hitem", type: "button", onclick: () => openCase(r) },
+      h("div", { class: "hmeta" }, h("span", { class: "cno", text: caseNo(r.case_no) }), h("span", { class: "muted", text: fmtStamp(r.created_at) }), chip(r.channel), badge(r.status)),
+      h("div", { class: "hmeta", style: "margin-top:2px" }, r.topic ? h("span", { text: r.topic }) : null,
+        h("span", { class: "match", text: [H.n && r.contact_norm === H.n ? "same contact" : null, H.d && r.dealer_id === H.d ? "same dealer " + r.dealer_id : null].filter(Boolean).join(", ") })),
+      h("div", { class: "hdesc", text: r.description })))));
+}
+
+async function loadMine() { const { rows } = await S.api.listCases({ from: today(), to: today(), staff: S.email }, 0, 200); S.mine = rows; }
+function renderMine() {
+  const box = $("#mine"); if (!box) return;
+  $("#mine-count").textContent = S.mine.length ? S.mine.length + (S.mine.length === 1 ? " case" : " cases") : "";
+  if (!S.mine.length) return put(box, h("p", { class: "empty" }, "Nothing lodged yet today. Cases you save appear here."));
+  put(box, caseTable(S.mine, { staff: false }));
+}
+
+function caseTable(rows, opt) {
+  return h("div", { class: "tblwrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, h("th", {}, "Case"), h("th", {}, opt.dateCol ? "Date" : "Time"), h("th", {}, "Channel"), h("th", {}, "Topic"), h("th", {}, "Contact"), h("th", {}, "Dealer ID"), h("th", {}, "Description"), h("th", {}, "Status"), opt.staff ? h("th", {}, "Logged by") : null)),
+    h("tbody", {}, rows.map(r => h("tr", { class: "click", tabindex: "0", onclick: () => openCase(r), onkeydown: e => { if (e.key === "Enter") openCase(r); } },
+      h("td", { class: "cno", text: caseNo(r.case_no) }),
+      h("td", { class: "nowrap", text: opt.dateCol ? fmtStamp(r.created_at) : fmtTime(r.created_at) }),
+      h("td", {}, chip(r.channel)),
+      h("td", { text: r.topic || "—" }),
+      h("td", { class: "nowrap", text: r.contact }),
+      h("td", { class: "nowrap", text: r.dealer_id || "—" }),
+      h("td", { class: "clip", title: r.description, text: r.description }),
+      h("td", {}, badge(r.status)),
+      opt.staff ? h("td", { class: "nowrap", text: nameOf(r.staff_email, r.staff_name) }) : null)))));
+}
+
+/* ================= case dialog ================= */
+function openCase(r) {
+  const dlg = $("#dlg"); const editable = canEdit(r);
+  const f = { channel: r.channel, topic: r.topic || "", contact: r.contact, dealer: r.dealer_id || "", desc: r.description, status: r.status, resolution: r.resolution || "" };
+  const ro = editable ? null : true;
+  const chSel = h("select", { id: "d-ch", disabled: ro, onchange: e => { f.channel = e.target.value; $("#d-contact-l").textContent = chMeta(f.channel).label; } },
+    [...new Set([...S.channels, r.channel])].map(c => h("option", { value: c }, c))); chSel.value = f.channel;
+  const tpSel = h("select", { id: "d-tp", disabled: ro, onchange: e => f.topic = e.target.value },
+    h("option", { value: "" }, "No topic"), [...new Set([...S.topics, ...(r.topic ? [r.topic] : [])])].map(t => h("option", { value: t }, t))); tpSel.value = f.topic;
+  const ct = h("input", { type: "text", id: "d-contact", value: f.contact, readonly: ro, oninput: e => f.contact = e.target.value });
+  const dl = h("input", { type: "text", id: "d-dealer", value: f.dealer, readonly: ro, style: "text-transform:uppercase", oninput: e => f.dealer = e.target.value });
+  const ds = h("textarea", { id: "d-desc", rows: "5", readonly: ro, oninput: e => f.desc = e.target.value }); ds.value = f.desc;
+  const st = h("div", { class: "status-set", role: "radiogroup", "aria-label": "Status" }, STATUSES.map(s => h("label", {}, h("input", { type: "radio", name: "d-status", value: s, disabled: ro, checked: f.status === s ? true : null, onchange: () => f.status = s }), s)));
+  const rs = h("textarea", { id: "d-res", rows: "3", readonly: ro, style: "min-height:72px", placeholder: "Action taken or next step", oninput: e => f.resolution = e.target.value }); rs.value = f.resolution;
+  const err = h("p", { class: "small", style: "color:var(--danger)" });
+
+  const save = async () => {
+    const cp = contactProblem(f.channel, f.contact); if (cp) return err.textContent = cp;
+    if (!f.desc.trim()) return err.textContent = "The description can’t be empty.";
+    try {
+      const row = await S.api.saveCase({ id: r.id, channel: f.channel, topic: f.topic || null, contact: f.contact.trim(), contact_norm: normContact(f.channel, f.contact), dealer_id: f.dealer.trim().toUpperCase() || null, description: f.desc.trim(), status: f.status, resolution: f.resolution.trim() || null });
+      dlg.close(); toast("Case " + caseNo(row.case_no) + " updated"); afterChange();
+    } catch (e) { err.textContent = "Not saved: " + errMsg(e); }
+  };
+  let confirmDel = false;
+  const delBtn = role() === "manager" ? h("button", { class: "btn danger", type: "button", onclick: async e => {
+    if (!confirmDel) { confirmDel = true; e.currentTarget.textContent = "Click again to delete"; return; }
+    try { await S.api.deleteCase(r.id); dlg.close(); toast("Case " + caseNo(r.case_no) + " deleted"); afterChange(); } catch (x) { err.textContent = "Not deleted: " + errMsg(x); }
+  } }, "Delete") : null;
+
+  put(dlg, h("div", { class: "dlg" },
+    h("div", { class: "dlg-h" }, h("div", {}, h("h2", { text: "Case " + caseNo(r.case_no) }),
+      h("p", { class: "meta" }, "Logged by " + nameOf(r.staff_email, r.staff_name) + " on " + fmtStamp(r.created_at) + (r.updated_by && r.updated_at && r.updated_at !== r.created_at ? ". Last changed by " + nameOf(r.updated_by) + ", " + fmtStamp(r.updated_at) + "." : "."))),
+      h("button", { class: "btn sm", type: "button", onclick: () => dlg.close(), "aria-label": "Close" }, "Close")),
+    !editable ? h("p", { class: "small muted" }, "You can view this case. Only the person who logged it, or a supervisor, can change it.") : null,
+    h("div", { class: "row2" }, h("div", { class: "field" }, h("label", { for: "d-ch" }, "Channel"), chSel), h("div", { class: "field" }, h("label", { for: "d-tp" }, "Topic"), tpSel)),
+    h("div", { class: "row2" }, h("div", { class: "field" }, h("label", { for: "d-contact", id: "d-contact-l" }, chMeta(f.channel).label), ct), h("div", { class: "field" }, h("label", { for: "d-dealer" }, "Dealer ID"), dl)),
+    h("div", { class: "field" }, h("label", { for: "d-desc" }, "Call description"), ds),
+    h("div", { class: "field" }, h("span", { class: "lbl" }, "Status"), st),
+    h("div", { class: "field" }, h("label", { for: "d-res" }, "Action taken"), rs),
+    err,
+    editable ? h("div", { class: "actions", style: "justify-content:space-between" }, h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", onclick: save }, "Save changes"), h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, "Cancel")), delBtn) : null));
+  dlg.showModal();
+}
+function afterChange() {
+  if (S.tab === "lodge") { S.hist.key = ""; loadHist(); loadMine().then(renderMine); }
+  else if (S.tab === "cases") reloadCases();
+  else if (S.tab === "report") loadReport();
+}
+
+/* ================= cases ================= */
+function staffOptions(sel, allLabel) {
+  return [h("option", { value: "" }, allLabel), h("option", { value: S.email }, "Me"),
+    S.members.filter(m => m.email !== S.email).map(m => h("option", { value: m.email }, m.name + (m.active ? "" : " (inactive)")))];
+}
+function renderCases() {
+  const f = S.cf; const set = (k, v) => { f[k] = v; reloadSoon(); };
+  const sel = (id, k, opts) => { const s = h("select", { id, onchange: e => set(k, e.target.value) }, opts); s.value = f[k]; return s; };
+  const q = h("input", { type: "search", id: "cf-q", placeholder: "Number, email, dealer ID, case no. or words", value: f.q, oninput: e => set("q", e.target.value) });
+  put($("#main"),
+    h("div", { class: "filters" },
+      h("div", { class: "field q" }, h("label", { for: "cf-q" }, "Search"), q),
+      h("div", { class: "field" }, h("label", { for: "cf-ch" }, "Channel"), sel("cf-ch", "channel", [h("option", { value: "" }, "All"), S.channels.map(c => h("option", { value: c }, c))])),
+      h("div", { class: "field" }, h("label", { for: "cf-tp" }, "Topic"), sel("cf-tp", "topic", [h("option", { value: "" }, "All"), S.topics.map(t => h("option", { value: t }, t)), h("option", { value: "__none" }, "No topic")])),
+      h("div", { class: "field" }, h("label", { for: "cf-st" }, "Status"), sel("cf-st", "status", [h("option", { value: "" }, "All"), STATUSES.map(s => h("option", { value: s }, s))])),
+      h("div", { class: "field" }, h("label", { for: "cf-sf" }, "Logged by"), sel("cf-sf", "staff", staffOptions(null, "Anyone"))),
+      h("div", { class: "field" }, h("label", { for: "cf-from" }, "From"), h("input", { type: "date", id: "cf-from", value: f.from, onchange: e => set("from", e.target.value) })),
+      h("div", { class: "field" }, h("label", { for: "cf-to" }, "To"), h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) }))),
+    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("button", { class: "btn sm", onclick: exportCsv }, "Export CSV")),
+    h("div", { class: "card", id: "cres" }, h("p", { class: "empty" }, "Loading cases…")));
+  reloadCases();
+}
+const reloadSoon = debounce(() => reloadCases(), 350);
+let casesReq = 0;
+async function reloadCases(append) {
+  const my = ++casesReq; const off = append ? S.cases.rows.length : 0;
+  try {
+    const { rows, count } = await S.api.listCases(S.cf, off, PAGE);
+    if (my !== casesReq) return;
+    S.cases = { rows: append ? S.cases.rows.concat(rows) : rows, count };
+    renderCaseResults();
+  } catch (e) { if (my === casesReq) put($("#cres"), h("p", { class: "empty", style: "color:var(--danger)" }, "Cases didn’t load: " + errMsg(e))); }
+}
+function renderCaseResults() {
+  const box = $("#cres"); if (!box) return;
+  const { rows, count } = S.cases;
+  $("#cres-count").textContent = count === 1 ? "1 case" : count + " cases";
+  if (!rows.length) return put(box, h("p", { class: "empty" }, "No cases match these filters. Widen the dates or clear the search."));
+  put(box, caseTable(rows, { staff: true, dateCol: true }),
+    rows.length < count ? h("div", { style: "text-align:center;margin-top:14px" }, h("button", { class: "btn", onclick: e => { e.currentTarget.disabled = true; reloadCases(true); } }, "Show " + Math.min(PAGE, count - rows.length) + " more")) : null);
+}
+async function exportCsv() {
+  toast("Preparing CSV…");
+  try {
+    const all = [];
+    for (let off = 0; off < 20000; off += 1000) { const { rows } = await S.api.listCases(S.cf, off, 1000); all.push(...rows); if (rows.length < 1000) break; }
+    const cols = [["Case no", r => r.case_no], ["Date", r => localDay(r.created_at)], ["Time", r => fmtTime(r.created_at)], ["Channel", r => r.channel], ["Topic", r => r.topic], ["Contact", r => r.contact], ["Dealer ID", r => r.dealer_id], ["Description", r => r.description], ["Status", r => r.status], ["Action taken", r => r.resolution], ["Logged by", r => nameOf(r.staff_email, r.staff_name)]];
+    const esc = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const csv = "\ufeff" + [cols.map(c => esc(c[0])).join(","), ...all.map(r => cols.map(c => esc(c[1](r))).join(","))].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = h("a", { href: url, download: "cases-" + S.cf.from + "-to-" + S.cf.to + ".csv" }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(all.length + " cases exported");
+  } catch (e) { toast("Export failed: " + errMsg(e)); }
+}
+
+/* ================= report ================= */
+const PRESETS = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["month", "This month"], ["custom", "Custom"]];
+function presetRange(p) {
+  const t = today();
+  if (p === "today") return [t, t];
+  if (p === "yesterday") { const y = addDays(t, -1); return [y, y]; }
+  if (p === "7") return [addDays(t, -6), t];
+  if (p === "30") return [addDays(t, -29), t];
+  if (p === "month") return [t.slice(0, 8) + "01", t];
+  return [S.rp.from, S.rp.to];
+}
+function renderReport() {
+  const r = S.rp; const isStaff = role() === "staff";
+  const presets = h("div", { class: "presets", role: "group", "aria-label": "Date range" }, PRESETS.map(([k, l]) => h("button", { type: "button", "aria-pressed": String(r.preset === k),
+    onclick: () => { r.preset = k; [r.from, r.to] = presetRange(k); renderReport(); } }, l)));
+  const custom = r.preset === "custom" ? h("div", { class: "actions" },
+    h("input", { type: "date", value: r.from, "aria-label": "From", style: "width:auto", onchange: e => { r.from = e.target.value; loadReport(); } }),
+    h("span", { class: "muted" }, "to"),
+    h("input", { type: "date", value: r.to, "aria-label": "To", style: "width:auto", onchange: e => { r.to = e.target.value; loadReport(); } })) : null;
+  let staffSel = null;
+  if (!isStaff) { staffSel = h("select", { style: "width:auto", "aria-label": "Staff", onchange: e => { r.staff = e.target.value; loadReport(); } }, staffOptions(null, "Whole team")); staffSel.value = r.staff; }
+  put($("#main"),
+    h("div", { class: "toolbar", style: "align-items:flex-end" }, h("div", { class: "stack", style: "gap:10px" }, presets, custom),
+      h("div", { class: "actions" }, staffSel, h("button", { class: "btn", onclick: copySummary }, "Copy summary"))),
+    h("div", { id: "rp" }, h("p", { class: "loading" }, "Counting cases…")));
+  loadReport();
+}
+let rpReq = 0;
+async function loadReport() {
+  const r = S.rp; const my = ++rpReq;
+  const staff = role() === "staff" ? S.email : r.staff;
+  if (r.from > r.to) return put($("#rp"), h("p", { class: "empty" }, "The start date is after the end date."));
+  try { const rows = await S.api.reportCases(r.from, r.to, staff); if (my !== rpReq) return; S.rpRows = rows; drawReport(); }
+  catch (e) { if (my === rpReq) put($("#rp"), h("p", { class: "empty", style: "color:var(--danger)" }, "Report didn’t load: " + errMsg(e))); }
+}
+function countBy(rows, fn) { const o = {}; for (const r of rows) { const k = fn(r); o[k] = (o[k] || 0) + 1; } return o; }
+function rangeLabel() { const { from, to } = S.rp; return from === to ? fmtDate(from) : fmtShort(from) + " to " + fmtShort(to) + " " + to.slice(0, 4); }
+function bars(obj, order, colorFn) {
+  const keys = order ? order.filter(k => obj[k]).concat(Object.keys(obj).filter(k => !order.includes(k))) : Object.keys(obj);
+  if (!order) keys.sort((a, b) => obj[b] - obj[a]);
+  const max = Math.max(1, ...Object.values(obj));
+  if (!keys.length) return h("p", { class: "empty" }, "No cases in this range.");
+  return h("div", { class: "bars" }, keys.map(k => h("div", { class: "bar" }, h("span", { class: "bl", title: k, text: k }),
+    h("span", { class: "bt" }, h("span", { class: "bf", style: "width:" + (obj[k] / max * 100).toFixed(1) + "%;" + (colorFn ? "background:" + colorFn(k) : "") })),
+    h("span", { class: "bn", text: obj[k] }))));
+}
+function drawReport() {
+  const rows = S.rpRows; const box = $("#rp"); if (!box) return;
+  const st = countBy(rows, r => r.status);
+  const dealers = new Set(rows.map(r => r.dealer_id).filter(Boolean)).size;
+  const byCh = countBy(rows, r => r.channel);
+  const byTp = countBy(rows, r => r.topic || "No topic");
+  const days = []; for (let d = S.rp.from; d <= S.rp.to && days.length < 370; d = addDays(d, 1)) days.push(d);
+  const perDay = countBy(rows, r => localDay(r.created_at));
+  const maxDay = Math.max(1, ...days.map(d => perDay[d] || 0));
+
+  const kpis = h("div", { class: "kpis" },
+    h("div", { class: "kpi" }, h("b", { text: rows.length }), h("span", {}, "Cases lodged")),
+    h("div", { class: "kpi" }, h("b", { text: (st.Open || 0) + (st["Follow-up"] || 0) }), h("span", {}, "Still open or in follow-up")),
+    h("div", { class: "kpi" }, h("b", { text: st.Closed || 0 }), h("span", {}, "Closed")),
+    h("div", { class: "kpi" }, h("b", { text: dealers }), h("span", {}, "Dealers involved")));
+
+  const trend = days.length > 1 ? h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "Cases per day" }), h("span", { class: "muted small", text: "Busiest: " + maxDay })),
+    h("div", { class: "cols", role: "img", "aria-label": "Cases per day" }, days.map(d => h("div", { class: "c", title: fmtShort(d) + ": " + (perDay[d] || 0), style: "height:" + ((perDay[d] || 0) / maxDay * 100).toFixed(1) + "%" }))),
+    h("div", { class: "colax" }, h("span", { text: fmtShort(days[0]) }), h("span", { text: fmtShort(days[days.length - 1]) }))) : null;
+
+  let staffPanel = null;
+  if (role() !== "staff" && !S.rp.staff) {
+    const by = {}; for (const r of rows) { const k = r.staff_email; (by[k] = by[k] || { name: nameOf(k, r.staff_name), total: 0, open: 0, ch: {} }); by[k].total++; if (r.status !== "Closed") by[k].open++; by[k].ch[r.channel] = (by[k].ch[r.channel] || 0) + 1; }
+    const list = Object.entries(by).sort((a, b) => b[1].total - a[1].total);
+    staffPanel = h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "By staff" })),
+      list.length ? h("div", { class: "tblwrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Staff"), S.channels.map(c => h("th", { class: "num" }, c)), h("th", { class: "num" }, "Not closed"), h("th", { class: "num" }, "Total"))),
+        h("tbody", {}, list.map(([em, v]) => h("tr", { class: "click", onclick: () => { S.rp.staff = em; renderReport(); } }, h("td", { style: "font-weight:600", text: v.name }), S.channels.map(c => h("td", { class: "num", text: v.ch[c] || "" })), h("td", { class: "num", text: v.open || "" }), h("td", { class: "num", style: "font-weight:700", text: v.total })))))) : h("p", { class: "empty" }, "No cases in this range."));
+  }
+
+  put(box,
+    h("p", { class: "muted", style: "margin-bottom:12px" }, rangeLabel() + (S.rp.staff ? ", " + nameOf(S.rp.staff) : role() === "staff" ? ", your cases" : ", whole team")),
+    kpis,
+    h("div", { class: "stack" },
+      h("div", { class: "grid2" },
+        h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "By channel" })), bars(byCh, S.channels, chColor)),
+        h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "By topic" })), bars(byTp, null, null))),
+      trend, staffPanel));
+}
+async function copySummary() {
+  const rows = S.rpRows; const st = countBy(rows, r => r.status);
+  const line = (o, order) => { const ks = (order || Object.keys(o).sort((a, b) => o[b] - o[a])).filter(k => o[k]); return ks.length ? ks.map(k => "- " + k + ": " + o[k]).join("\n") : "- none"; };
+  let t = "Case summary, " + rangeLabel() + (S.rp.staff ? " (" + nameOf(S.rp.staff) + ")" : role() === "staff" ? " (" + S.me.name + ")" : "") + "\n";
+  t += "Total cases: " + rows.length + "\nOpen: " + (st.Open || 0) + " | Follow-up: " + (st["Follow-up"] || 0) + " | Closed: " + (st.Closed || 0) + "\n\n";
+  t += "By channel\n" + line(countBy(rows, r => r.channel), S.channels) + "\n\nBy topic\n" + line(countBy(rows, r => r.topic || "No topic"));
+  if (role() !== "staff" && !S.rp.staff) { const by = countBy(rows, r => nameOf(r.staff_email, r.staff_name)); t += "\n\nBy staff\n" + line(by); }
+  try { await navigator.clipboard.writeText(t); toast("Summary copied"); }
+  catch { const ta = h("textarea", {}); ta.value = t; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Summary copied"); }
+}
+
+/* ================= settings (manager) ================= */
+function renderSettings() {
+  if (role() !== "manager") return go("lodge");
+  const rows = S.members.map(m => {
+    const isMe = m.email === S.email;
+    const rs = h("select", { "aria-label": "Role for " + m.name, style: "width:auto", disabled: isMe ? true : null, onchange: e => saveMember({ ...m, role: e.target.value }, m.name + " is now " + ROLES[e.target.value]) },
+      Object.entries(ROLES).map(([k, l]) => h("option", { value: k }, l))); rs.value = m.role;
+    const act = h("input", { type: "checkbox", "aria-label": "Active", checked: m.active ? true : null, disabled: isMe ? true : null,
+      onchange: e => saveMember({ ...m, active: e.target.checked }, m.name + (e.target.checked ? " can sign in again" : " can no longer sign in")) });
+    return h("tr", {}, h("td", { style: "font-weight:600" }, m.name, isMe ? h("span", { class: "muted", style: "font-weight:400" }, " (you)") : null), h("td", { text: m.email }), h("td", {}, rs), h("td", {}, h("label", { style: "display:inline-flex;gap:6px;align-items:center" }, act, m.active ? "Active" : "Off")));
+  });
+  const nm = h("input", { type: "text", placeholder: "Name", "aria-label": "Name" });
+  const em = h("input", { type: "email", placeholder: "Work email (their login)", "aria-label": "Email" });
+  const rl = h("select", { "aria-label": "Role", style: "width:auto" }, Object.entries(ROLES).map(([k, l]) => h("option", { value: k }, l)));
+  const add = () => {
+    const n = nm.value.trim(), e = em.value.trim().toLowerCase();
+    if (!n) return nm.focus();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { em.focus(); return toast("Enter a valid email address"); }
+    if (S.members.some(m => m.email === e)) return toast("That email is already on the list");
+    saveMember({ email: e, name: n, role: rl.value, active: true, sort: S.members.length }, n + " added");
+  };
+  const tp = h("textarea", { id: "s-topics", rows: "10", placeholder: "One topic per line" }); tp.value = S.topics.join("\n");
+  const ch = h("textarea", { id: "s-ch", rows: "6" }); ch.value = S.channels.join("\n");
+
+  put($("#main"),
+    h("div", { class: "stack" },
+      h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "Team and sign-in access" }), h("span", { class: "muted small", text: S.members.filter(m => m.active).length + " active" })),
+        h("div", { class: "tblwrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Email (login)"), h("th", {}, "Role"), h("th", {}, "Access"))), h("tbody", {}, rows))),
+        h("div", { class: "actions", style: "margin-top:14px" }, h("div", { style: "flex:1 1 160px" }, nm), h("div", { style: "flex:1 1 220px" }, em), rl, h("button", { class: "btn primary", onclick: add }, "Add person")),
+        h("p", { class: "muted small", style: "margin-top:12px" }, "Only active people on this list can see or lodge cases; the database enforces it. Adding someone here doesn’t create their login. If they don’t have one yet, create it in Supabase under Authentication, then they can use “Forgot or never set a password?” to choose a password.")),
+      h("div", { class: "grid2" },
+        h("section", { class: "card stack", style: "gap:10px" }, h("h3", { text: "Topics" }), h("p", { class: "muted small", text: "One per line, in the order staff should see them. Renaming a topic doesn’t change past cases." }), tp),
+        h("section", { class: "card stack", style: "gap:10px" }, h("h3", { text: "Channels" }), h("p", { class: "muted small", text: "One per line. Call, WhatsApp, Facebook, Email and Walk-In have their own colours and contact fields." }), ch)),
+      h("div", {}, h("button", { class: "btn primary", onclick: async () => {
+        const topics = [...new Set(tp.value.split("\n").map(s => s.trim()).filter(Boolean))];
+        const channels = [...new Set(ch.value.split("\n").map(s => s.trim()).filter(Boolean))];
+        if (!channels.length) return toast("Keep at least one channel");
+        try { await S.api.saveSettings({ topics, channels }); S.topics = topics; S.channels = channels; toast("Lists saved"); renderSettings(); } catch (e) { toast("Lists not saved: " + errMsg(e)); }
+      } }, "Save lists"))));
+}
+async function saveMember(m, okMsg) {
+  try { await S.api.saveMember(m); await loadCore(); toast(okMsg); renderSettings(); }
+  catch (e) { toast("Not saved: " + errMsg(e)); renderSettings(); }
+}
+
+/* ================= keyboard ================= */
+document.addEventListener("keydown", e => {
+  if (!S.me || S.tab !== "lodge" || $("#dlg").open) return;
+  if (e.altKey && /^[1-9]$/.test(e.key)) { const c = S.channels[Number(e.key) - 1]; if (c) { e.preventDefault(); setChannel(c); } }
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveDraft(); }
+});
+
+boot();
+</script>
+</body>
+</html>
