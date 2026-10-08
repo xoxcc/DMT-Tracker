@@ -196,6 +196,7 @@ dialog::backdrop{background:rgba(10,15,20,.5)}
 .cp-bar span{display:block;height:100%;border-radius:3px;background:var(--ok)}
 .cp.ending .cp-bar span{background:var(--warn)}
 .cp.ended .cp-bar span{background:var(--line-2)}
+.cp-bar.open span{background:repeating-linear-gradient(90deg,var(--ok) 0 10px,color-mix(in srgb,var(--ok) 35%,transparent) 10px 20px)}
 .cp-btns{display:flex;gap:8px;flex-wrap:wrap}
 .cp-body{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:24px;border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
 @media (max-width:760px){.cp-body{grid-template-columns:minmax(0,1fr)}}
@@ -593,10 +594,12 @@ function renderSignIn(err) {
       try { await S.api.signIn(email.value.trim(), pw.value); await enter(await S.api.session()); }
       catch (x) { msg.textContent = /invalid/i.test(errMsg(x)) ? "That email and password don’t match. Check both, or reset your password below." : "Sign-in failed: " + errMsg(x); btn.disabled = false; }
     } }, h("div", { class: "field" }, h("label", { for: "si-email" }, "Work email"), email), h("div", { class: "field" }, h("label", { for: "si-pw" }, "Password"), pw), btn, msg),
-    h("button", { class: "linkbtn", style: "align-self:flex-start", onclick: renderReset }, "Forgot or never set a password?"),
+    h("button", { class: "linkbtn", style: "align-self:flex-start", type: "button", onclick: showForgot }, "Forgot password?"),
+    h("div", { class: "notice", id: "forgot-msg", role: "alert", hidden: true, style: "margin:0" }, "Please contact your administrator to change your password."),
     CFG.microsoftSignIn ? [h("div", { class: "or" }, "or"), h("button", { class: "btn", onclick: async () => { try { await S.api.microsoft(); } catch (x) { msg.textContent = "Microsoft sign-in didn’t start: " + errMsg(x); } } }, "Sign in with Microsoft")] : null);
   setTimeout(() => email.focus(), 0);
 }
+function showForgot() { const m = $("#forgot-msg"); if (m) { m.hidden = false; m.focus?.(); } }
 function renderReset() {
   const email = h("input", { type: "email", id: "rs-email", autocomplete: "username", required: true });
   const msg = h("p", { class: "small" }); const btn = h("button", { class: "btn primary", type: "submit" }, "Send reset link");
@@ -752,12 +755,12 @@ function drawQuickTexts(d, pre) {
 // Optional link to a campaign running on (or up to 30 days before) the case date.
 function campaignField(d, pre, ro) {
   const day = d.date || today();
-  const list = S.campaigns.filter(c => c.start_date <= day && addDays(c.end_date, 30) >= day || c.id === d.campaign)
-    .sort((a, b) => (b.end_date >= day) - (a.end_date >= day) || a.end_date.localeCompare(b.end_date));
+  const list = S.campaigns.filter(c => c.start_date <= day && (!c.end_date || addDays(c.end_date, 30) >= day) || c.id === d.campaign)
+    .sort((a, b) => (endOf(b) >= day) - (endOf(a) >= day) || endOf(a).localeCompare(endOf(b)) || a.title.localeCompare(b.title));
   if (!list.length) return null;
   const s = h("select", { id: pre + "-campaign", disabled: ro, onchange: e => d.campaign = e.target.value },
     h("option", { value: "" }, "Not related to a campaign"),
-    list.map(c => h("option", { value: c.id }, c.title + (c.code ? " (" + c.code + ")" : "") + (c.end_date < day ? ", ended" : ""))));
+    list.map(c => h("option", { value: c.id }, c.title + (c.code ? " (" + c.code + ")" : "") + (endOf(c) < day ? ", ended" : ""))));
   s.value = d.campaign || "";
   return fieldWrap(pre, "campaign", h("span", {}, "Related campaign ", h("span", { class: "opt" }, "(if the dealer asked about one)")), s);
 }
@@ -1082,8 +1085,8 @@ function summaryData() {
   // campaigns overlapping the period, with linked cases
   const linked = countBy(rows.filter(r => r.campaign_id), r => r.campaign_id);
   const linkedPending = countBy(rows.filter(r => r.campaign_id && r.status !== "Closed"), r => r.campaign_id);
-  const inPeriod = S.campaigns.filter(c => c.start_date <= R.to && c.end_date >= R.from || linked[c.id])
-    .sort((a, b) => (linked[b.id] || 0) - (linked[a.id] || 0) || a.end_date.localeCompare(b.end_date));
+  const inPeriod = S.campaigns.filter(c => c.start_date <= R.to && endOf(c) >= R.from || linked[c.id])
+    .sort((a, b) => (linked[b.id] || 0) - (linked[a.id] || 0) || endOf(a).localeCompare(endOf(b)));
   const t = today();
   return {
     R, rows, prev, st, pst, days, topDealers, linked, linkedPending, inPeriod,
@@ -1096,8 +1099,8 @@ function summaryData() {
     staffBySource: pivot(rows, r => nameOf(r.staff_email, r.staff_name), r => r.channel, S.channels, null),
     statusBySource: pivot(rows, r => r.status, r => r.channel, S.channels, STATUSES),
     cp: {
-      running: S.campaigns.filter(c => c.start_date <= t && c.end_date >= t).length,
-      ending: S.campaigns.filter(c => c.start_date <= t && c.end_date >= t && dayDiff(t, c.end_date) <= 7).length,
+      running: S.campaigns.filter(c => c.start_date <= t && endOf(c) >= t).length,
+      ending: S.campaigns.filter(c => c.end_date && c.start_date <= t && c.end_date >= t && dayDiff(t, c.end_date) <= 7).length,
       upcoming: S.campaigns.filter(c => c.start_date > t && dayDiff(t, c.start_date) <= 30).length,
       cases: rows.filter(r => r.campaign_id).length
     }
@@ -1166,7 +1169,7 @@ function drawSummary() {
       h("tbody", {}, D.inPeriod.map(c => { const ph = cpPhase(c); return h("tr", { class: "click", onclick: () => showCampaign(c) },
         h("td", {}, h("div", { style: "font-weight:600", text: c.title }), c.code ? h("div", { class: "small muted", text: c.code }) : null),
         h("td", {}, h("span", { class: "cpb cpb-" + ph.key, text: ph.label })),
-        h("td", { class: "nowrap", text: fmtShort(c.start_date) + " → " + fmtShort(c.end_date) }),
+        h("td", { class: "nowrap", text: fmtShort(c.start_date) + " → " + (c.end_date ? fmtShort(c.end_date) : "ongoing") }),
         h("td", { style: "min-width:150px" }, h("span", { class: "cp-bar " + ph.key, style: "margin:4px 0" }, h("span", { style: "width:" + ph.pct.toFixed(1) + "%" })), h("div", { class: "small muted", text: ph.text })),
         h("td", { class: "num", style: "font-weight:700", text: D.linked[c.id] || "·" }), h("td", { class: "num", text: D.linkedPending[c.id] || "·" })); }))))
     : h("p", { class: "empty" }, "No campaigns ran during this period.");
@@ -1205,8 +1208,8 @@ function summaryText() {
   t += "*By sub issue*\n" + lines(D.issueBySub.ct, null);
   if (D.topDealers.length) t += "\n\n*Dealers with most cases*\n" + D.topDealers.slice(0, 5).map(x => "- " + x.id + (x.name ? " " + x.name : "") + ": " + x.n).join("\n");
   if (role() !== "staff" && !S.rp.staff) t += "\n\n*By staff*\n" + lines(D.staffBySource.rt, null);
-  const live = S.campaigns.filter(c => c.start_date <= today() && c.end_date >= today()).sort((a, b) => a.end_date.localeCompare(b.end_date));
-  if (live.length) t += "\n\n*Campaigns running*\n" + live.map(c => "- " + c.title + " (until " + fmtShort(c.end_date) + ")" + (D.linked[c.id] ? ": " + D.linked[c.id] + " cases" : "")).join("\n");
+  const live = S.campaigns.filter(c => c.start_date <= today() && endOf(c) >= today()).sort((a, b) => endOf(a).localeCompare(endOf(b)));
+  if (live.length) t += "\n\n*Campaigns running*\n" + live.map(c => "- " + c.title + (c.end_date ? " (until " + fmtShort(c.end_date) + ")" : " (until further notice)") + (D.linked[c.id] ? ": " + D.linked[c.id] + " cases" : "")).join("\n");
   return t;
 }
 async function copySummary() {
@@ -1232,7 +1235,7 @@ async function exportSummary() {
     aoa.push([], ...daily);
     aoa.push([], ["DEALERS WITH MOST CASES"], ["DEALER ID", "NAME", "CASES", "PENDING", "LATEST ISSUE"], ...D.topDealers.map(x => [x.id, x.name || "", x.n, x.pending, [x.last.topic, x.last.sub_issue].filter(Boolean).join(" / ")]));
     const cps = [["CAMPAIGNS IN THIS PERIOD"], ["CAMPAIGN", "CODE", "STATUS", "START", "END", "FOR", "CASES", "PENDING", "MEMO REF", "PERSON IN CHARGE"],
-      ...D.inPeriod.map(c => [c.title, c.code || "", cpPhase(c).label, fmtDmy(c.start_date), fmtDmy(c.end_date), audText(c.audience), D.linked[c.id] || 0, D.linkedPending[c.id] || 0, c.memo_ref || "", c.pic || ""])];
+      ...D.inPeriod.map(c => [c.title, c.code || "", cpPhase(c).label, fmtDmy(c.start_date), c.end_date ? fmtDmy(c.end_date) : "Until further notice", audText(c.audience), D.linked[c.id] || 0, D.linkedPending[c.id] || 0, c.memo_ref || "", c.pic || ""])];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet(aoa, [24, 12, 14, 12, 12, 12, 12, 12, 12]), "Summary");
     XLSX.utils.book_append_sheet(wb, sheet(cps, [40, 12, 12, 10, 10, 20, 8, 9, 18, 20]), "Campaigns");
@@ -1243,11 +1246,20 @@ async function exportSummary() {
 }
 
 /* ================= campaigns ================= */
+const OPEN_END = "9999-12-31";                                  // "until further notice"
+function endOf(c) { return c.end_date || OPEN_END; }
+function fmtEnd(c, f) { return c.end_date ? (f || fmtLong)(c.end_date) : "Until further notice"; }
 function dayDiff(a, b) { return Math.round((parseD(b) - parseD(a)) / 86400000); }
 function fmtLong(s) { if (!s) return ""; const d = parseD(s); return pad(d.getDate()) + " " + MON[d.getMonth()] + " " + d.getFullYear(); }
 function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
 function cpPhase(c) {
-  const t = today(); const total = dayDiff(c.start_date, c.end_date) + 1;
+  const t = today();
+  if (!c.end_date) {
+    if (t < c.start_date) { const n = dayDiff(t, c.start_date); return { key: "upcoming", label: "Upcoming", pct: 0, text: (n === 1 ? "Starts tomorrow" : "Starts in " + plural(n, "day")) + " · no end date", total: 0, open: true }; }
+    const day = dayDiff(c.start_date, t) + 1;
+    return { key: "active", label: "Active", pct: 100, text: "Running " + plural(day, "day") + " · until further notice", total: 0, open: true };
+  }
+  const total = dayDiff(c.start_date, c.end_date) + 1;
   if (t < c.start_date) { const n = dayDiff(t, c.start_date); return { key: "upcoming", label: "Upcoming", pct: 0, text: (n === 1 ? "Starts tomorrow" : "Starts in " + plural(n, "day")) + " · runs " + plural(total, "day"), total }; }
   if (t > c.end_date) { const n = dayDiff(c.end_date, t); return { key: "ended", label: "Ended", pct: 100, text: "Ended " + (n === 1 ? "yesterday" : plural(n, "day") + " ago"), total }; }
   const day = dayDiff(c.start_date, t) + 1, left = dayDiff(t, c.end_date);
@@ -1272,9 +1284,9 @@ function cpGroups() {
   const list = S.campaigns.filter(c => !q || [c.title, c.code, c.category, c.memo_ref, c.mechanics, c.eligibility, c.reward, c.target, c.pic, c.notes].some(x => String(x || "").toLowerCase().includes(q)));
   const by = { current: [], upcoming: [], ended: [] };
   for (const c of list) { const k = cpPhase(c).key; (k === "active" || k === "ending" ? by.current : by[k]).push(c); }
-  by.current.sort((a, b) => a.end_date.localeCompare(b.end_date));
+  by.current.sort((a, b) => endOf(a).localeCompare(endOf(b)) || b.start_date.localeCompare(a.start_date));
   by.upcoming.sort((a, b) => a.start_date.localeCompare(b.start_date));
-  by.ended.sort((a, b) => b.end_date.localeCompare(a.end_date));
+  by.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
   by.all = [...by.current, ...by.upcoming, ...by.ended];
   return by;
 }
@@ -1311,8 +1323,8 @@ function campaignCard(c) {
       h("div", { class: "cp-main" }, h("h3", { text: c.title }),
         h("p", { class: "meta", text: [c.code, c.category, c.memo_ref ? "Memo " + c.memo_ref : null].filter(Boolean).join(" · ") }),
         h("div", { class: "cp-tags" }, h("span", { class: "cpb cpb-" + ph.key, text: ph.label }), audLabel(c.audience) ? h("span", { class: "cpb", text: audLabel(c.audience) }) : null)),
-      h("div", {}, h("div", { class: "cp-range", text: fmtLong(c.start_date) + " → " + fmtLong(c.end_date) }),
-        h("span", { class: "cp-bar", role: "img", "aria-label": ph.text }, h("span", { style: "width:" + ph.pct.toFixed(1) + "%" })),
+      h("div", {}, h("div", { class: "cp-range", text: fmtLong(c.start_date) + " → " + fmtEnd(c) }),
+        h("span", { class: "cp-bar" + (ph.open ? " open" : ""), role: "img", "aria-label": ph.text }, h("span", { style: "width:" + ph.pct.toFixed(1) + "%" })),
         h("div", { class: "meta", text: ph.text })),
       h("div", { class: "cp-btns" }, h("button", { class: "btn sm", "aria-expanded": String(open), onclick: toggle }, open ? "Hide details" : "Show details"),
         canManage() ? h("button", { class: "btn sm", onclick: () => openCampaignEditor(c) }, "Edit") : null)),
@@ -1320,7 +1332,7 @@ function campaignCard(c) {
       h("dl", { class: "cp-dl" },
         row("Mechanics", c.mechanics), row("Eligibility", c.eligibility), row("Reward", c.reward), row("Target / KPI", c.target), row("Person in charge", c.pic),
         row("Memo ref", c.memo_ref ? c.memo_ref + (c.memo_date ? ", dated " + fmtLong(c.memo_date) : "") : ""),
-        row("Validity", fmtLong(c.start_date) + " to " + fmtLong(c.end_date) + " (" + plural(ph.total, "day") + ")"),
+        row("Validity", c.end_date ? fmtLong(c.start_date) + " to " + fmtLong(c.end_date) + " (" + plural(ph.total, "day") + ")" : fmtLong(c.start_date) + " until further notice"),
         row("For", audText(c.audience))),
       h("div", { class: "cp-side stack", style: "gap:18px" },
         h("div", {}, h("h4", {}, "Memos"), files.length ? files.map(f => h("button", { class: "filebtn", type: "button", onclick: () => openMemo(f) }, f.name, h("small", {}, fileSize(f.size || 0)))) : h("p", { class: "muted small" }, "No memo attached.")),
@@ -1330,6 +1342,8 @@ function openCampaignEditor(c) {
   const dlg = $("#dlg");
   const f = c ? { ...c, audience: [...(c.audience || [])], files: [...(c.files || [])] }
     : { title: "", code: "", category: "", memo_ref: "", memo_date: "", start_date: today(), end_date: addDays(today(), 30), audience: S.audience.slice(), mechanics: "", eligibility: "", reward: "", target: "", pic: "", notes: "", files: [] };
+  f.openEnd = !!c && !c.end_date; if (!f.end_date) f.end_date = "";
+  const endInput = h("input", { id: "cp-end_date-in", type: "date", value: f.end_date, disabled: f.openEnd ? true : null, oninput: e => f.end_date = e.target.value });
   const pending = [], removed = [];
   const err = h("p", { class: "small", style: "color:var(--danger)" });
   const inp = (k, label, attrs) => h("div", { class: "field" }, h("label", { for: "cp-" + k + "-in" }, label), h("input", Object.assign({ id: "cp-" + k + "-in", type: "text", value: f[k] || "", oninput: e => f[k] = e.target.value }, attrs)));
@@ -1348,12 +1362,13 @@ function openCampaignEditor(c) {
   saveBtn.onclick = async () => {
     err.textContent = "";
     if (!f.title.trim()) return err.textContent = "Give the campaign a name.";
-    if (!f.start_date || !f.end_date) return err.textContent = "Set the start and end dates.";
-    if (f.end_date < f.start_date) return err.textContent = "The end date is before the start date.";
+    if (!f.start_date) return err.textContent = "Set the start date.";
+    if (!f.openEnd && !f.end_date) return err.textContent = "Set the end date, or tick Until further notice.";
+    if (!f.openEnd && f.end_date < f.start_date) return err.textContent = "The end date is before the start date.";
     saveBtn.disabled = true; saveBtn.textContent = "Saving…";
     try {
       const row = { title: f.title.trim(), code: f.code.trim().toUpperCase() || null, category: f.category.trim() || null, memo_ref: f.memo_ref.trim() || null, memo_date: f.memo_date || null,
-        start_date: f.start_date, end_date: f.end_date, audience: f.audience, mechanics: f.mechanics.trim() || null, eligibility: f.eligibility.trim() || null, reward: f.reward.trim() || null,
+        start_date: f.start_date, end_date: f.openEnd ? null : f.end_date, audience: f.audience, mechanics: f.mechanics.trim() || null, eligibility: f.eligibility.trim() || null, reward: f.reward.trim() || null,
         target: f.target.trim() || null, pic: f.pic.trim() || null, notes: f.notes.trim() || null, files: f.files };
       const saved = await S.api.saveCampaign(c ? c.id : null, row);
       if (pending.length) {
@@ -1378,7 +1393,11 @@ function openCampaignEditor(c) {
     inp("title", "Campaign name", { placeholder: "e.g. Q4 Dealer Activation Booster" }),
     h("div", { class: "row2" }, inp("code", "Code", { class: "up", placeholder: "e.g. Q4-01" }), inp("category", "Category", { placeholder: "e.g. Sales / activation", list: "cp-cats" })),
     h("datalist", { id: "cp-cats" }, cats.map(x => h("option", { value: x }))),
-    h("div", { class: "row2" }, inp("start_date", "Starts", { type: "date" }), inp("end_date", "Ends", { type: "date" })),
+    h("div", { class: "row2" }, inp("start_date", "Starts", { type: "date" }),
+      h("div", { class: "field" }, h("label", { for: "cp-end_date-in" }, "Ends"),
+        endInput,
+        h("label", { class: "small", style: "display:inline-flex;gap:6px;align-items:center;font-weight:600" },
+          h("input", { type: "checkbox", checked: f.openEnd ? true : null, onchange: e => { f.openEnd = e.target.checked; endInput.disabled = f.openEnd; } }), "Until further notice"))),
     h("div", { class: "field" }, h("span", { class: "lbl" }, "For"), audSet),
     h("div", { class: "row2" }, inp("memo_ref", "Memo ref", { class: "up", placeholder: "e.g. XOX/DM/2026/045" }), inp("memo_date", "Memo dated", { type: "date" })),
     area("mechanics", "Mechanics", 3, "How it works"), area("eligibility", "Eligibility", 2, "Who qualifies"),
@@ -1593,7 +1612,7 @@ function renderSettings() {
       h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "Team and sign-in access" }), h("span", { class: "muted small", text: S.members.filter(m => m.active).length + " active" })),
         h("div", { class: "tblwrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Email (login)"), h("th", {}, "Role"), h("th", {}, "Access"))), h("tbody", {}, rows))),
         h("div", { class: "actions", style: "margin-top:14px" }, h("div", { style: "flex:1 1 160px" }, nm), h("div", { style: "flex:1 1 220px" }, em), rl, h("button", { class: "btn primary", onclick: add }, "Add person")),
-        h("p", { class: "muted small", style: "margin-top:12px" }, "Only active people on this list can see or lodge cases; the database enforces it. Adding someone here doesn’t create their login. If they don’t have one yet, create it in Supabase under Authentication, then they can use “Forgot or never set a password?” to choose a password.")),
+        h("p", { class: "muted small", style: "margin-top:12px" }, "Only active people on this list can see or lodge cases; the database enforces it. Adding someone here doesn’t create their login. If they don’t have one yet, create it in Supabase under Authentication with a temporary password; they can change it with Change password after signing in.")),
       h("div", { class: "grid2" },
         listCard("Main issues", "One per line, in the order staff should see them. Renaming one doesn’t change past cases.", tp),
         listCard("Sub issues", "One per line.", sb),
