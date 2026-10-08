@@ -219,6 +219,18 @@ dialog::backdrop{background:rgba(10,15,20,.5)}
 .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px}
 .cp-bar.ending span{background:var(--warn)}
 .cp-bar.ended span{background:var(--line-2)}
+/* quick texts */
+.qt{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.qt:empty{display:none}
+.qt .lbl{font-size:12px;color:var(--muted);font-weight:600;margin-right:2px}
+.qt button{border:1px dashed var(--line-2);background:var(--surface);border-radius:999px;padding:4px 11px;font-size:13px;cursor:pointer;text-align:left;max-width:100%}
+.qt button:hover{border-style:solid;border-color:var(--ink);background:var(--sunk)}
+.qtrow{display:grid;grid-template-columns:minmax(0,160px) minmax(0,140px) minmax(0,1fr) auto;gap:8px;align-items:center;margin-bottom:8px}
+@media (max-width:700px){.qtrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.qtrow input{grid-column:1/-1}}
+.notice{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;background:var(--open-soft);color:var(--open);border-radius:var(--r);padding:10px 14px;margin:0 0 14px;font-size:14px;font-weight:600}
+.imp-sum .kpi b{font-size:22px}
+.imp-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:600px){.imp-sum{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:var(--r);font-weight:600;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
 .loading{color:var(--muted);padding:40px 0;text-align:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -228,6 +240,7 @@ dialog::backdrop{background:rgba(10,15,20,.5)}
 <div class="app">
   <header class="top" id="top"></header>
   <div class="banner" id="banner" hidden></div>
+  <div class="notice" id="notice" hidden></div>
   <nav class="tabs" id="tabs" role="tablist" hidden></nav>
   <main id="main"><div class="loading">Loading…</div></main>
 </div>
@@ -386,11 +399,12 @@ function supaApi() {
     async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
     async microsoft() { const { error } = await sb.auth.signInWithOAuth({ provider: "azure", options: { scopes: "email openid profile", redirectTo: location.origin + location.pathname } }); if (error) throw error; },
     async reset(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; },
-    async setPassword(pw) { const { error } = await sb.auth.updateUser({ password: pw }); if (error) throw error; },
+    async setPassword(pw) { const { error } = await sb.auth.updateUser({ password: pw, data: { temp_password: false } }); if (error) throw error; },
     async signOut() { await sb.auth.signOut(); location.replace(location.pathname); },
     async members() { const { data, error } = await sb.from("crm_members").select("*").order("sort").order("name"); if (error) throw error; return data || []; },
     async settings() { const { data, error } = await sb.from("crm_settings").select("*").eq("id", 1).maybeSingle(); if (error) throw error; return data; },
-    async saveSettings(s) { const { error } = await sb.from("crm_settings").update({ topics: s.topics, sub_issues: s.subs, channels: s.channels, states: s.states, campaign_audience: s.audience, updated_at: new Date().toISOString() }).eq("id", 1); if (error) throw error; },
+    async saveSettings(s) { const { error } = await sb.from("crm_settings").update({ topics: s.topics, sub_issues: s.subs, channels: s.channels, states: s.states, campaign_audience: s.audience, templates: s.templates, updated_at: new Date().toISOString() }).eq("id", 1); if (error) throw error; },
+    async insertCases(rows) { for (let i = 0; i < rows.length; i += 200) { const { error } = await sb.from(CASES).insert(rows.slice(i, i + 200)); if (error) throw error; } },
     async campaigns() { const { data, error } = await sb.from("crm_campaigns").select("*").order("end_date", { ascending: false }); if (error) throw error; return data || []; },
     async saveCampaign(id, row) {
       const res = id ? await sb.from("crm_campaigns").update(row).eq("id", id).select().single() : await sb.from("crm_campaigns").insert(row).select().single();
@@ -445,7 +459,11 @@ function demoApi() {
     { email: "kavitha@demo.local", name: "Kavitha", role: "staff", active: true, sort: 3 },
     { email: "mei@demo.local", name: "Mei Ling", role: "supervisor", active: true, sort: 4 }
   ];
-  const settings = { channels: DEFAULT_CHANNELS.slice(), topics: ["HIERARCHY", "CP58", "INCENTIVE", "REGISTER", "ERECHARGE"], sub_issues: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(), campaign_audience: DEFAULT_AUDIENCE.slice() };
+  const settings = { channels: DEFAULT_CHANNELS.slice(), topics: ["HIERARCHY", "CP58", "INCENTIVE", "REGISTER", "ERECHARGE"], sub_issues: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(), campaign_audience: DEFAULT_AUDIENCE.slice(),
+    templates: [{ topic: "HIERARCHY", sub: "STATUS", text: "{phone} - Check status hierarchy" }, { topic: "CP58", sub: "REQUEST", text: "{dealer} - Request CP58" },
+      { topic: "INCENTIVE", sub: "", text: "Request payment incentive (3rd party) {dealer}" }, { topic: "INCENTIVE", sub: "STATUS", text: "Dealer reported outstanding incentive payment for {month}" },
+      { topic: "REGISTER", sub: "EKYC", text: "Dealer reported eKYC timeout error during IC image capture/upload" }, { topic: "ERECHARGE", sub: "", text: "{phone} - Check status top-up" },
+      { topic: "", sub: "", text: "Advised dealer to try again after 24 hours" }] };
   let cpSeq = 0;
   const campaigns = [
     { id: "c" + (++cpSeq), code: "EX-Q4-01", title: "Example: Q4 Dealer Activation Booster", category: "Sales / activation", memo_ref: "EX/MEMO/001", memo_date: addDays(today(), -25), start_date: addDays(today(), -20), end_date: addDays(today(), 5), audience: DEFAULT_AUDIENCE.slice(),
@@ -493,7 +511,10 @@ function demoApi() {
     async signOut() { location.reload(); },
     async members() { return members.map(m => ({ ...m })); },
     async settings() { return JSON.parse(JSON.stringify(settings)); },
-    async saveSettings(s) { settings.topics = s.topics; settings.sub_issues = s.subs; settings.channels = s.channels; settings.states = s.states; settings.campaign_audience = s.audience; },
+    async saveSettings(s) { settings.topics = s.topics; settings.sub_issues = s.subs; settings.channels = s.channels; settings.states = s.states; settings.campaign_audience = s.audience; settings.templates = s.templates; },
+    async insertCases(rows) { for (const r of rows) await this.saveCase(null, r); },
+    async signIn(email, pw) { if (!pw) throw new Error("Invalid login credentials"); },
+    async setPassword() {},
     async campaigns() { return campaigns.map(c => ({ ...c, audience: [...c.audience], files: [...c.files] })); },
     async saveCampaign(id, row) {
       const now = new Date().toISOString();
@@ -534,13 +555,14 @@ async function boot() {
 }
 async function enter(session) {
   S.email = String(session.user.email || "").toLowerCase();
+  S.user = session.user;
   put($("#main"), h("div", { class: "loading" }, "Loading…"));
   try { await loadCore(); }
   catch (e) { console.error(e); return renderProblem("The tracker data didn’t load. Check your connection and reload. If the message mentions a missing column or table, run the latest schema.sql in Supabase.", e); }
   S.me = S.members.find(m => m.active && m.email === S.email) || null;
   if (!S.me) return renderNoAccess();
   S.draft = blankDraft(S.channels[0]);
-  S.tab = "lodge"; renderTop(); go("lodge");
+  S.tab = "lodge"; renderTop(); go("lodge"); showPwNotice();
   S.api.subscribe(() => scheduleRefresh());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleRefresh(); });
 }
@@ -553,6 +575,7 @@ async function loadCore() {
   S.subs = (st && Array.isArray(st.sub_issues)) ? st.sub_issues : DEFAULT_SUBS.slice();
   S.states = arr(st && st.states, DEFAULT_STATES.slice());
   S.audience = arr(st && st.campaign_audience, DEFAULT_AUDIENCE.slice());
+  S.templates = (st && Array.isArray(st.templates)) ? st.templates.filter(t => t && t.text) : [];
   try { S.campaigns = await S.api.campaigns(); } catch (e) { console.warn("campaigns not loaded", e); S.campaigns = []; }
   put($("#dl-assign"), S.members.filter(m => m.active).map(m => h("option", { value: m.name })));
 }
@@ -624,7 +647,7 @@ function renderTop() {
     h("select", { style: "width:auto;padding:4px 8px", onchange: e => { S.previewRole = e.target.value === "manager" ? "" : e.target.value; if (!tabsFor().some(t => t[0] === S.tab)) S.tab = "lodge"; renderTop(); go(S.tab); } },
       Object.entries(ROLES).map(([k, l]) => h("option", { value: k, selected: role() === k ? true : null }, l)))) : null;
   put($("#top"), h("div", { class: "brand" }, h("h1", { text: APP_NAME }), h("span", { class: "muted small", text: fmtDate(today()) })),
-    h("div", { class: "who" }, preview, h("span", { class: "nm", text: S.me.name }), h("span", { class: "role", text: ROLES[role()] }), h("button", { class: "btn sm", onclick: () => S.api.signOut() }, "Sign out")));
+    h("div", { class: "who" }, preview, h("span", { class: "nm", text: S.me.name }), h("span", { class: "role", text: ROLES[role()] }), h("button", { class: "btn sm", onclick: openChangePassword }, "Change password"), h("button", { class: "btn sm", onclick: () => S.api.signOut() }, "Sign out")));
   renderTabs();
 }
 function renderTabs() { const t = $("#tabs"); t.hidden = false; put(t, tabsFor().map(([k, l]) => h("button", { class: "tab", role: "tab", "aria-selected": String(S.tab === k), onclick: () => go(k) }, l))); }
@@ -646,7 +669,7 @@ function caseForm(d, opt) {
   const id = k => pre + "-" + k;
   const m = chMeta(d.channel);
   const sel = (k, list, prop, placeholder) => {
-    const s = h("select", { id: id(k), disabled: ro, onchange: e => { d[prop] = e.target.value; clearErr(pre, k); } },
+    const s = h("select", { id: id(k), disabled: ro, onchange: e => { d[prop] = e.target.value; clearErr(pre, k); if (prop === "topic" || prop === "sub") drawQuickTexts(d, pre); } },
       h("option", { value: "" }, placeholder), uniq([...list, d[prop]]).map(v => h("option", { value: v }, v)));
     s.value = d[prop]; return s;
   };
@@ -679,6 +702,7 @@ function caseForm(d, opt) {
     h("div", { class: "row2" }, fieldWrap(pre, "topic", "Main issue", topicEl), fieldWrap(pre, "sub", "Sub issue", sel("sub", S.subs, "sub", "Select"))),
     campaignField(d, pre, ro),
     fieldWrap(pre, "desc", "Description", desc),
+    ro ? null : quickTexts(d, pre, desc),
     h("div", { class: "row2" },
       fieldWrap(pre, "caseRef", h("span", {}, "Case no. ", h("span", { class: "opt" }, "(from CRM, if any)")), inp("caseRef", "caseRef", { type: "text", class: "up", placeholder: "e.g. CA07102026-6532688" })),
       fieldWrap(pre, "assigned", h("span", {}, "Assigned to ", h("span", { class: "opt" }, "(if escalated)")), inp("assigned", "assigned", { type: "text", list: "dl-assign", placeholder: "Person or team" }))),
@@ -686,6 +710,31 @@ function caseForm(d, opt) {
     h("div", { class: "field" }, h("label", { for: id("res") }, "Remarks ", h("span", { class: "opt" }, "(optional)")), res)
   ];
 }
+/* ---------- quick descriptions ---------- */
+function fillTemplate(text, d) {
+  const phone = d.dphone.trim() || (chMeta(d.channel).phone ? d.contact.trim() : "");
+  const t = today(); const prevMonth = MONTHS[(+t.slice(5, 7) + 10) % 12] + " " + (t.slice(5, 7) === "01" ? +t.slice(0, 4) - 1 : t.slice(0, 4));
+  return text.replace(/\{phone\}/gi, phone).replace(/\{dealer\}/gi, d.dealer.trim().toUpperCase()).replace(/\{name\}/gi, d.dname.trim().toUpperCase())
+    .replace(/\{case\}/gi, d.caseRef.trim().toUpperCase()).replace(/\{month\}/gi, prevMonth)
+    .replace(/^\s*-\s*/, "").replace(/\s+-\s*$/, "").replace(/\s{2,}/g, " ").trim();
+}
+function matchingTemplates(d) {
+  return S.templates.filter(t => (!t.topic || t.topic === d.topic) && (!t.sub || t.sub === d.sub))
+    .sort((a, b) => (!!b.topic + !!b.sub) - (!!a.topic + !!a.sub)).slice(0, 10);
+}
+function quickTexts(d, pre, desc) { const box = h("div", { class: "qt", id: pre + "-qt" }); box._d = d; box._desc = desc; setTimeout(() => drawQuickTexts(d, pre), 0); return box; }
+function drawQuickTexts(d, pre) {
+  const box = $("#" + pre + "-qt"); if (!box) return;
+  const list = matchingTemplates(d);
+  if (!list.length) return put(box);
+  put(box, h("span", { class: "lbl" }, "Quick text:"), list.map(t => h("button", { type: "button", title: "Insert into description", onclick: () => {
+    const txt = fillTemplate(t.text, d); const ta = $("#" + pre + "-desc");
+    d.desc = d.desc.trim() ? d.desc.replace(/\s+$/, "") + "\n" + txt : txt;
+    if (ta) { ta.value = d.desc; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    clearErr(pre, "desc");
+  } }, t.text)));
+}
+
 // Optional link to a campaign running on (or up to 30 days before) the case date.
 function campaignField(d, pre, ro) {
   const day = d.date || today();
@@ -861,7 +910,7 @@ function renderCases() {
       fld("cf-sf", "Logged by", sel("cf-sf", "staff", staffOptions("Anyone"))),
       fld("cf-from", "From", h("input", { type: "date", id: "cf-from", value: f.from, onchange: e => set("from", e.target.value) })),
       fld("cf-to", "To", h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) }))),
-    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel")),
+    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("div", { class: "actions" }, role() === "manager" ? h("button", { class: "btn sm", onclick: openImport }, "Import Excel") : null, h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel"))),
     h("div", { class: "card", id: "cres", style: "padding:12px 16px" }, h("p", { class: "empty" }, "Loading cases…")));
   reloadCases();
 }
@@ -1327,6 +1376,174 @@ function openCampaignEditor(c) {
   setTimeout(() => $("#cp-title-in")?.focus(), 0);
 }
 
+/* ================= change password ================= */
+function showPwNotice() {
+  const n = $("#notice");
+  if (!(S.user && S.user.user_metadata && S.user.user_metadata.temp_password)) { n.hidden = true; return; }
+  put(n, h("span", {}, "You’re using a temporary password. Please change it to one only you know."), h("button", { class: "btn sm", onclick: openChangePassword }, "Change password"));
+  n.hidden = false;
+}
+function openChangePassword() {
+  const dlg = $("#dlg");
+  const cur = h("input", { type: "password", id: "cp-cur", autocomplete: "current-password" });
+  const a = h("input", { type: "password", id: "cp-new1", autocomplete: "new-password" });
+  const b = h("input", { type: "password", id: "cp-new2", autocomplete: "new-password" });
+  const err = h("p", { class: "small", style: "color:var(--danger)" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Change password");
+  put(dlg, h("form", { class: "dlg", style: "max-width:440px;margin:0 auto", onsubmit: async e => {
+    e.preventDefault(); err.textContent = "";
+    if (!cur.value) { cur.focus(); return err.textContent = "Enter your current password."; }
+    if (a.value.length < 8) { a.focus(); return err.textContent = "Use at least 8 characters for the new password."; }
+    if (a.value !== b.value) { b.focus(); return err.textContent = "The two new passwords don’t match."; }
+    if (a.value === cur.value) { a.focus(); return err.textContent = "The new password must be different from the current one."; }
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      try { await S.api.signIn(S.email, cur.value); } catch (x) { throw new Error(/invalid/i.test(errMsg(x)) ? "Your current password isn’t right." : errMsg(x)); }
+      await S.api.setPassword(a.value);
+      if (S.user && S.user.user_metadata) S.user.user_metadata.temp_password = false;
+      dlg.close(); showPwNotice(); toast("Password changed. Use the new one next time you sign in.");
+    } catch (x) { err.textContent = errMsg(x); btn.disabled = false; btn.textContent = "Change password"; }
+  } },
+    h("div", { class: "dlg-h" }, h("h2", { text: "Change password" }), h("button", { class: "btn sm", type: "button", onclick: () => dlg.close() }, "Close")),
+    h("div", { class: "field" }, h("label", { for: "cp-cur" }, "Current password"), cur),
+    h("div", { class: "field" }, h("label", { for: "cp-new1" }, "New password"), a, h("span", { class: "hint" }, "At least 8 characters. This also changes it for other tools that use the same login.")),
+    h("div", { class: "field" }, h("label", { for: "cp-new2" }, "Type the new password again"), b),
+    err, h("div", { class: "actions" }, btn, h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, "Cancel"))));
+  dlg.style.width = "min(480px, calc(100% - 24px))";
+  dlg.addEventListener("close", () => dlg.style.width = "", { once: true });
+  dlg.showModal(); setTimeout(() => cur.focus(), 0);
+}
+
+/* ================= import from Excel (manager) ================= */
+const IMPORT_HEADERS = { "DATE": "date", "DEALER ID": "dealer", "FON NO": "phone", "PHONE NO": "phone", "DEALERS NAME": "name", "DEALER NAME": "name", "STATE": "state",
+  "MAIN ISSUE": "topic", "SUB ISSUE": "sub", "DESCRIPTION": "desc", "CASE": "caseRef", "CASE NO": "caseRef", "ASSIGNED TO": "assigned", "STATUS": "status",
+  "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact" };
+const EMPTY_CELL = /^(select|none|nil|n\/?a|-+|done)$/i;
+function cellText(v) { const t = String(v ?? "").replace(/\s+/g, " ").trim(); return EMPTY_CELL.test(t) ? "" : t; }
+function cellDate(v) {
+  if (typeof v === "number" && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()); }
+  const t = String(v ?? "").trim(); let m;
+  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return m[1] + "-" + pad(m[2]) + "-" + pad(m[3]);
+  if ((m = t.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/))) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; if (+m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31) return y + "-" + pad(m[2]) + "-" + pad(m[1]); }
+  return "";
+}
+function mapSource(v) {
+  const k = String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+  const known = { email: "Email", emel: "Email", call: "Call", calls: "Call", phone: "Call", inbound: "Call", whatsapp: "WhatsApp", wa: "WhatsApp", whatapps: "WhatsApp", whatsap: "WhatsApp", facebook: "Facebook", fb: "Facebook", walkin: "Walk-In" };
+  if (known[k]) return known[k];
+  const hit = S.channels.find(c => c.toLowerCase().replace(/[^a-z]/g, "") === k);
+  return hit || (v ? String(v).trim() : NOT_SET);
+}
+function mapStatus(v, completed) {
+  const k = String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (/^(closed|close|done|resolved|completed|solved)$/.test(k)) return "Closed";
+  if (/^(followup|pending|inprogress|escalated|kiv)$/.test(k)) return "Follow-up";
+  if (/^(open|new)$/.test(k)) return "Open";
+  return completed ? "Closed" : "Open";
+}
+function findHeader(aoa) {
+  for (let i = 0; i < Math.min(aoa.length, 25); i++) {
+    const map = {}; let hits = 0;
+    aoa[i].forEach((c, j) => { const k = String(c || "").toUpperCase().replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim(); if (IMPORT_HEADERS[k] && !(IMPORT_HEADERS[k] in map)) { map[IMPORT_HEADERS[k]] = j; hits++; } });
+    if (hits >= 4 && ("desc" in map || "dealer" in map)) return { row: i, map };
+  }
+  return null;
+}
+function parseSheet(ws) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+  const hd = findHeader(aoa); if (!hd) return null;
+  const out = [], skipped = { noDate: 0 };
+  for (let i = hd.row + 1; i < aoa.length; i++) {
+    const row = aoa[i]; const g = k => k in hd.map ? row[hd.map[k]] : "";
+    const x = { dealer: cellText(g("dealer")).toUpperCase(), phone: cellText(g("phone")), name: cellText(g("name")), state: cellText(g("state")).toUpperCase(), topic: cellText(g("topic")).toUpperCase(),
+      sub: cellText(g("sub")).toUpperCase(), desc: cellText(g("desc")), caseRef: cellText(g("caseRef")).toUpperCase(), assigned: cellText(g("assigned")), remarks: cellText(g("remarks")), contact: cellText(g("contact")) };
+    if (!x.desc && !x.dealer && !x.caseRef && !x.phone) continue;              // empty template row
+    const date = cellDate(g("date")); if (!date) { skipped.noDate++; continue; }
+    const completed = cellDate(g("completed"));
+    const channel = mapSource(cellText(g("source")));
+    let contact = x.contact, resolution = x.remarks;
+    if (!contact && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.remarks)) { contact = x.remarks; resolution = ""; }   // the tracker keeps sender emails in REMARKS
+    if (!contact) contact = x.phone || x.dealer || "-";
+    const status = mapStatus(cellText(g("status")), completed);
+    out.push({ case_date: date, channel, contact, contact_norm: normContact(channel, contact), dealer_id: x.dealer || null, dealer_name: x.name || null, dealer_phone: x.phone || null,
+      state: x.state || null, topic: x.topic || null, sub_issue: x.sub || null, description: x.desc || [x.topic, x.sub].filter(Boolean).join(" ") || "Imported case",
+      case_ref: x.caseRef || null, assigned_to: x.assigned || null, status, completed_on: status === "Closed" ? (completed || date) : null, resolution: resolution || null });
+  }
+  return { rows: out, skipped };
+}
+function openImport() {
+  const dlg = $("#dlg"); const body = h("div", { class: "stack", style: "gap:14px" });
+  const step1 = (msg) => put(body,
+    h("p", {}, "Upload your DMT tracker (.xlsx). The app finds the header row with DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE and REMARKS, on every sheet."),
+    h("ul", { class: "small muted", style: "margin:0;padding-left:18px" },
+      h("li", {}, "Empty template rows (SELECT / NONE / DONE) are ignored."),
+      h("li", {}, "Rows already in the tracker (same case no., or same date, dealer and description) are skipped, so importing the same file twice is safe."),
+      h("li", {}, "Emails in REMARKS become the sender contact. Imported cases show you as “Logged by”.")),
+    msg ? h("p", { class: "small", style: "color:var(--danger)" }, msg) : null,
+    h("input", { type: "file", accept: ".xlsx,.xls,.xlsm,.csv", onchange: e => { const f = e.target.files[0]; if (f) analyse(f); } }));
+  const analyse = async file => {
+    put(body, h("p", { class: "loading" }, "Reading " + file.name + "…"));
+    try {
+      await loadXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: false });
+      const sheets = []; for (const name of wb.SheetNames) { const r = parseSheet(wb.Sheets[name]); if (r && (r.rows.length || r.skipped.noDate)) sheets.push({ name, ...r, use: true }); }
+      if (!sheets.length) return step1("No tracker columns were found in " + file.name + ". Check that the header row includes DEALER ID and DESCRIPTION.");
+      const all = sheets.flatMap(s => s.rows); const dates = all.map(r => r.case_date).sort();
+      const existing = dates.length ? await S.api.reportCases(dates[0], dates[dates.length - 1], "") : [];
+      const keyOf = r => r.case_date + "|" + (r.dealer_id || "") + "|" + String(r.description || "").trim().toLowerCase();
+      const refs = new Set(existing.map(r => r.case_ref).filter(Boolean)), keys = new Set(existing.map(keyOf));
+      preview(file, sheets, refs, keys, keyOf);
+    } catch (e) { step1("Couldn’t read that file: " + errMsg(e)); }
+  };
+  const preview = (file, sheets, refs, keys, keyOf) => {
+    const compute = () => {
+      const seen = new Set(); const fresh = []; let dup = 0;
+      for (const s of sheets) if (s.use) for (const r of s.rows) { const k = keyOf(r); if ((r.case_ref && refs.has(r.case_ref)) || keys.has(k) || seen.has(k)) { dup++; continue; } seen.add(k); fresh.push(r); }
+      return { fresh, dup, noDate: sheets.filter(s => s.use).reduce((a, s) => a + s.skipped.noDate, 0) };
+    };
+    const draw = () => {
+      const c = compute(); const ds = c.fresh.map(r => r.case_date).sort();
+      const newVals = { "Main issues": uniq(c.fresh.map(r => r.topic)).filter(v => !S.topics.includes(v)), "Sub issues": uniq(c.fresh.map(r => r.sub_issue)).filter(v => !S.subs.includes(v)),
+        "States": uniq(c.fresh.map(r => r.state)).filter(v => !S.states.includes(v)), "Sources": uniq(c.fresh.map(r => r.channel)).filter(v => v !== NOT_SET && !S.channels.includes(v)) };
+      const anyNew = Object.values(newVals).some(v => v.length);
+      const addBox = h("input", { type: "checkbox", id: "imp-add", checked: true });
+      const go = h("button", { class: "btn primary", type: "button", disabled: c.fresh.length ? null : true }, c.fresh.length ? "Import " + plural(c.fresh.length, "case") : "Nothing new to import");
+      go.onclick = async () => {
+        go.disabled = true; go.textContent = "Importing…";
+        try {
+          if (anyNew && addBox.checked) {
+            const next = { topics: uniq([...S.topics, ...newVals["Main issues"]]), subs: uniq([...S.subs, ...newVals["Sub issues"]]), states: uniq([...S.states, ...newVals["States"]]),
+              channels: uniq([...S.channels, ...newVals["Sources"]]), audience: S.audience, templates: S.templates };
+            await S.api.saveSettings(next); Object.assign(S, { topics: next.topics, subs: next.subs, states: next.states, channels: next.channels });
+          }
+          await S.api.insertCases(c.fresh);
+          dlg.close(); toast(plural(c.fresh.length, "case") + " imported");
+          S.cf.from = ds[0]; S.cf.to = ds[ds.length - 1] > today() ? ds[ds.length - 1] : today(); renderCases();
+        } catch (e) { go.disabled = false; go.textContent = "Import " + plural(c.fresh.length, "case"); put(errBox, "Import stopped: " + errMsg(e) + ". Cases imported before the error are saved; importing the file again skips them."); }
+      };
+      const errBox = h("p", { class: "small", style: "color:var(--danger)" });
+      put(body,
+        h("p", { class: "small muted", text: file.name }),
+        sheets.length > 1 ? h("div", { class: "field" }, h("span", { class: "lbl" }, "Sheets"), h("div", { class: "aud-set" }, sheets.map(s => h("label", {}, h("input", { type: "checkbox", checked: s.use ? true : null, onchange: e => { s.use = e.target.checked; draw(); } }), s.name + " (" + s.rows.length + ")")))) : null,
+        h("div", { class: "imp-sum" }, kpi(c.fresh.length, "New cases to import"), kpi(c.dup, "Already in tracker, skipped"), kpi(c.noDate, "Skipped, no valid date"),
+          kpi(ds.length ? (ds[0] === ds[ds.length - 1] ? fmtDmy(ds[0]) : fmtDmy(ds[0]) + " to " + fmtDmy(ds[ds.length - 1])) : "–", "Date range")),
+        c.fresh.length ? h("div", { class: "tblwrap" }, h("table", { class: "tracker" },
+          h("thead", {}, h("tr", {}, ["Date", "Dealer ID", "Dealer name", "Main issue", "Sub issue", "Description", "Status", "Source", "Contact"].map(t => h("th", {}, t)))),
+          h("tbody", {}, c.fresh.slice(0, 8).map(r => h("tr", {}, h("td", { class: "nowrap", text: fmtDmy(r.case_date) }), h("td", { class: "nowrap", text: r.dealer_id || "" }), h("td", { class: "nowrap", text: r.dealer_name || "" }),
+            h("td", { text: r.topic || "" }), h("td", { text: r.sub_issue || "" }), h("td", { class: "clip", style: "max-width:220px", text: r.description }), h("td", {}, badge(r.status)), h("td", {}, chip(r.channel)), h("td", { class: "nowrap", text: r.contact })))))) : null,
+        c.fresh.length > 8 ? h("p", { class: "small muted" }, "Showing the first 8 of " + c.fresh.length + ".") : null,
+        anyNew ? h("div", { class: "card", style: "padding:14px;background:var(--sunk);border:0" },
+          h("label", { style: "display:flex;gap:8px;align-items:flex-start;font-weight:600" }, addBox, "Add values found in the file to the dropdown lists"),
+          h("div", { class: "small muted", style: "margin-top:6px" }, Object.entries(newVals).filter(([, v]) => v.length).map(([k, v]) => h("div", {}, k + ": " + v.join(", "))))) : null,
+        errBox,
+        h("div", { class: "actions" }, go, h("button", { class: "btn", type: "button", onclick: () => step1() }, "Choose another file")));
+    };
+    draw();
+  };
+  put(dlg, h("div", { class: "dlg" }, h("div", { class: "dlg-h" }, h("h2", { text: "Import from Excel" }), h("button", { class: "btn sm", type: "button", onclick: () => dlg.close() }, "Close")), body));
+  step1(); dlg.showModal();
+}
+
 /* ================= settings (manager) ================= */
 function renderSettings() {
   if (role() !== "manager") return go("lodge");
@@ -1368,9 +1585,32 @@ function renderSettings() {
         const next = { topics: split(tp), subs: split(sb), channels: split(ch), states: split(stt), audience: split(aud) };
         if (!next.audience.length) next.audience = DEFAULT_AUDIENCE.slice();
         if (!next.channels.length) return toast("Keep at least one source");
-        try { await S.api.saveSettings(next); S.topics = next.topics; S.subs = next.subs; S.channels = next.channels; S.states = next.states; S.audience = next.audience; toast("Lists saved"); renderSettings(); }
+        try { await S.api.saveSettings({ ...next, templates: S.templates }); S.topics = next.topics; S.subs = next.subs; S.channels = next.channels; S.states = next.states; S.audience = next.audience; toast("Lists saved"); renderSettings(); }
         catch (e) { toast("Lists not saved: " + errMsg(e)); }
-      } }, "Save lists"))));
+      } }, "Save lists")),
+      templateEditor()));
+}
+function templateEditor() {
+  const rows = S.templates.map(t => ({ ...t }));
+  const box = h("div", {});
+  const draw = () => put(box, rows.length ? rows.map((t, i) => {
+    const tp = h("select", { "aria-label": "Main issue", onchange: e => t.topic = e.target.value }, h("option", { value: "" }, "Any main issue"), uniq([...S.topics, t.topic]).map(v => h("option", { value: v }, v))); tp.value = t.topic || "";
+    const sb = h("select", { "aria-label": "Sub issue", onchange: e => t.sub = e.target.value }, h("option", { value: "" }, "Any sub issue"), uniq([...S.subs, t.sub]).map(v => h("option", { value: v }, v))); sb.value = t.sub || "";
+    return h("div", { class: "qtrow" }, tp, sb, h("input", { type: "text", value: t.text, "aria-label": "Text", placeholder: "e.g. {phone} - Check status top-up", oninput: e => t.text = e.target.value }),
+      h("button", { class: "btn sm", type: "button", "aria-label": "Remove", onclick: () => { rows.splice(i, 1); draw(); } }, "Remove"));
+  }) : h("p", { class: "empty" }, "No quick texts yet."));
+  draw();
+  return h("section", { class: "card stack", style: "gap:12px" },
+    h("div", {}, h("h3", { text: "Quick descriptions" }),
+      h("p", { class: "muted small", style: "margin-top:4px" }, "Shown as tap-to-insert buttons under Description when the main issue and sub issue match. Use {phone}, {dealer}, {name}, {case} or {month} (last month) to fill in details from the form automatically.")),
+    box,
+    h("div", { class: "actions" },
+      h("button", { class: "btn", type: "button", onclick: () => { rows.push({ topic: "", sub: "", text: "" }); draw(); box.querySelector(".qtrow:last-child input")?.focus(); } }, "Add quick text"),
+      h("button", { class: "btn primary", type: "button", onclick: async () => {
+        const clean = rows.map(t => ({ topic: t.topic || "", sub: t.sub || "", text: (t.text || "").trim() })).filter(t => t.text);
+        try { await S.api.saveSettings({ topics: S.topics, subs: S.subs, channels: S.channels, states: S.states, audience: S.audience, templates: clean }); S.templates = clean; toast("Quick descriptions saved"); renderSettings(); }
+        catch (e) { toast("Not saved: " + errMsg(e)); }
+      } }, "Save quick descriptions")));
 }
 async function saveMember(m, okMsg) {
   try { await S.api.saveMember(m); await loadCore(); toast(okMsg); renderSettings(); }
