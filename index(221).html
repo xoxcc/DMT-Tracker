@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DMT Daily Activity Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<style>
+/* Source colour carries through the UI: picker tiles, form edge, chips, summary bars. Everything else stays neutral. */
+:root{
+  --paper:#EEF1F4; --surface:#FFFFFF; --sunk:#E5EAEF; --ink:#141C25; --muted:#586473; --line:#D6DDE4; --line-2:#BFC9D3;
+  --primary:#141C25; --primary-ink:#FFFFFF; --danger:#B42318; --heat:#2B5FA8;
+  --ok:#1E7A46; --ok-soft:#E0F1E6; --warn:#8A5700; --warn-soft:#FAEED6; --open:#2B5FA8; --open-soft:#E2EBF7;
+  --c-call:#2D67B3; --c-whatsapp:#1C8549; --c-facebook:#5A4CC2; --c-email:#AD6C10; --c-walk-in:#AE2F6E; --c-other:#586473;
+  --font:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:8px; --r-lg:14px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0E141A; --surface:#151D25; --sunk:#1C2630; --ink:#E5EAF0; --muted:#97A3B0; --line:#27323D; --line-2:#3A4754;
+  --primary:#E5EAF0; --primary-ink:#0E141A; --danger:#FF8A7F; --heat:#6E9BE0;
+  --ok:#6DD39A; --ok-soft:#173326; --warn:#F0B95C; --warn-soft:#3A2B12; --open:#8DB3EC; --open-soft:#1A2A40;
+  --c-call:#78A8EC; --c-whatsapp:#5CCB8B; --c-facebook:#A99EF2; --c-email:#E8AE58; --c-walk-in:#EE89BA; --c-other:#97A3B0;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--open);outline-offset:2px}
+h1,h2,h3{margin:0;font-weight:650;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:20px;font-weight:700}
+h2{font-size:22px}
+h3{font-size:16px}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.app{max-width:1280px;margin:0 auto;padding:0 20px 64px}
+[hidden]{display:none!important}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:18px 0 12px}
+.brand{display:flex;align-items:baseline;gap:12px;margin-right:auto;flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.who .nm{font-weight:600}
+.role{font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.banner{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;margin:0 0 14px;font-size:14px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:22px;overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;cursor:pointer;color:var(--muted);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+.tab:hover{color:var(--ink)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line-2);background:var(--surface);border-radius:var(--r);padding:8px 14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--sunk)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.btn.primary:hover{opacity:.9}
+.btn.danger{color:var(--danger)}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.55;cursor:default}
+.linkbtn{background:none;border:0;padding:0;color:var(--open);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+input[type=text],input[type=email],input[type=tel],input[type=password],input[type=date],input[type=search],select,textarea{
+  width:100%;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);padding:9px 12px;min-width:0}
+input::placeholder{text-transform:none}
+textarea{resize:vertical;min-height:100px;line-height:1.5}
+select{cursor:pointer}
+input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{border-color:var(--danger)}
+.up{text-transform:uppercase}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field>label,.lbl{font-size:13px;font-weight:600}
+.field .hint{font-size:12px;color:var(--muted)}
+.field .err{font-size:13px;color:var(--danger)}
+.field .err:empty{display:none}
+.opt{font-weight:400;color:var(--muted)}
+.filled{font-size:12px;color:var(--ok);font-weight:600}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.row3{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:14px}
+.lodge{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:900px){.lodge,.grid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:620px){.row2,.row3{grid-template-columns:minmax(0,1fr)}.app{padding:0 12px 48px}}
+.head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:14px}
+.divider{border:0;border-top:1px solid var(--line);margin:2px 0}
+
+.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;margin-bottom:16px}
+.chtile{--tc:var(--c-other);display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:12px 14px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;text-align:left;font-weight:600;transition:background .12s,border-color .12s}
+.chtile svg{width:22px;height:22px;fill:none;stroke:var(--tc);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.chtile:hover{border-color:var(--tc)}
+.chtile[aria-pressed=true]{background:var(--tc);border-color:var(--tc);color:var(--surface)}
+.chtile[aria-pressed=true] svg{stroke:var(--surface)}
+.formcard{border-left:5px solid var(--ch,var(--c-other))}
+.status-set{display:flex;flex-wrap:wrap;gap:6px}
+.status-set label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-2);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:14px;font-weight:600}
+.status-set input{accent-color:var(--ink);margin:0}
+.status-set label:has(input:checked){background:var(--sunk);border-color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.kbd{font-size:12px;color:var(--muted)}
+
+.chip{--tc:var(--c-other);display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap}
+.chip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--tc);flex:none}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap}
+.b-open{background:var(--open-soft);color:var(--open)}
+.b-follow-up{background:var(--warn-soft);color:var(--warn)}
+.b-closed{background:var(--ok-soft);color:var(--ok)}
+.cno{font-weight:600;white-space:nowrap}
+
+.hist{display:flex;flex-direction:column;max-height:560px;overflow-y:auto}
+.hitem{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:12px 0;cursor:pointer}
+.hitem:first-child{border-top:0}
+.hmeta{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px}
+.hdesc{margin-top:4px;color:var(--muted);font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.match{font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:14px;padding:6px 0}
+
+.tblwrap{overflow-x:auto;margin:0 -4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:8px;border-bottom:1px solid var(--line-2);white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--sunk)}
+.clip{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nowrap{white-space:nowrap}
+.tracker{font-size:13px}
+.tracker td{padding:8px 7px}
+.tracker th{position:sticky;top:0;background:var(--surface);z-index:1}
+
+/* summary matrices: shaded cells read like a heat map of the Excel pivot */
+.mx{font-size:13px}
+.mx th,.mx td{padding:7px 9px}
+.mx td.v{text-align:right;background:color-mix(in srgb,var(--heat) var(--h,0%),transparent)}
+.mx td.v.z{color:var(--line-2)}
+.mx .tot{font-weight:700;background:var(--sunk)}
+.mx tfoot td{font-weight:700;background:var(--sunk);border-bottom:0}
+.mx th.num{text-align:right}
+
+.filters{display:grid;grid-template-columns:2fr repeat(4,minmax(0,1fr));gap:10px;align-items:end;margin-bottom:16px}
+@media (max-width:1000px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.filters .q{grid-column:1/-1}}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
+
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{border:1px solid var(--line-2);background:var(--surface);border-radius:999px;padding:5px 12px;font-weight:600;font-size:14px;cursor:pointer}
+.presets button[aria-pressed=true]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px}
+@media (max-width:800px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px 16px}
+.kpi b{display:block;font-size:30px;font-weight:700;line-height:1.15}
+.kpi span{font-size:13px;color:var(--muted)}
+.bars{display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:minmax(90px,170px) minmax(0,1fr) 44px;gap:10px;align-items:center;font-size:14px}
+.bar .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{display:block;height:12px;background:var(--sunk);border-radius:6px;overflow:hidden}
+.bar .bf{display:block;height:100%;border-radius:6px;background:var(--ink)}
+.bar .bn{text-align:right;font-weight:600}
+.cols{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:8px}
+.cols .c{flex:1;min-width:3px;background:var(--ink);border-radius:3px 3px 0 0}
+.cols .c:hover{opacity:.75}
+.colax{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px}
+
+dialog{border:0;border-radius:var(--r-lg);padding:0;width:min(760px,calc(100% - 24px));max-height:calc(100% - 32px);background:var(--surface);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(10,15,20,.5)}
+.dlg{padding:22px;display:flex;flex-direction:column;gap:14px}
+.dlg-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.meta{font-size:13px;color:var(--muted)}
+
+.welcome{max-width:400px;margin:8vh auto 0}
+.welcome .card{display:flex;flex-direction:column;gap:14px;padding:26px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:var(--r);font-weight:600;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
+.loading{color:var(--muted);padding:40px 0;text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top"></header>
+  <div class="banner" id="banner" hidden></div>
+  <nav class="tabs" id="tabs" role="tablist" hidden></nav>
+  <main id="main"><div class="loading">Loading…</div></main>
+</div>
+<dialog id="dlg"></dialog>
+<datalist id="dl-assign"></datalist>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+"use strict";
+/* ================= config ================= */
+const CFG = window.CRM_CONFIG || {};
+const APP_NAME = CFG.appName || "DMT Daily Activity Tracker";
+const HASH = location.hash || "";
+const AUTH_TYPE = (HASH.match(/[#&]type=([a-z_]+)/) || [])[1] || "";
+const HASH_ERR = decodeURIComponent(((HASH.match(/error_description=([^&]+)/) || [])[1] || "").replace(/\+/g, " "));
+const LIVE = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/i.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
+const DEFAULT_CHANNELS = ["Call", "WhatsApp", "Facebook", "Email", "Walk-In"];
+const DEFAULT_SUBS = ["STATUS", "REQUEST", "UPDATE", "EKYC", "ERROR"];
+const DEFAULT_STATES = ["JOHOR", "KEDAH", "KELANTAN", "MELAKA", "NEGERI SEMBILAN", "PAHANG", "PERAK", "PERLIS", "PULAU PINANG", "SABAH", "SARAWAK", "SELANGOR", "TERENGGANU", "WILAYAH"];
+const STATUSES = ["Open", "Follow-up", "Closed"];
+const ROLES = { staff: "Staff", supervisor: "Supervisor", manager: "Manager" };
+const PAGE = 50;
+const NOT_SET = "Not set";
+
+const ICONS = {
+  call: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  whatsapp: '<path d="M20.5 12a8.5 8.5 0 0 1-12.4 7.5L3.5 20.5l1-4.4A8.5 8.5 0 1 1 20.5 12z"/><path d="M9 10h6M9 13.5h4"/>',
+  facebook: '<rect x="3" y="4" width="18" height="13" rx="3"/><path d="M8 17v3.5l4-3.5"/><circle cx="12" cy="10.5" r="2.3"/>',
+  email: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',
+  "walk-in": '<circle cx="13" cy="4.5" r="2"/><path d="m9 21 2.5-6.5L14 16v5M8 11l3-3.5h3l2.5 3.5M11.5 14.5 13 8"/>',
+  other: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12h8"/>'
+};
+const CH_META = {
+  call: { label: "Caller number", ph: "e.g. 012-345 6789", type: "tel", phone: true },
+  whatsapp: { label: "WhatsApp number", ph: "e.g. 6012-345 6789", type: "tel", phone: true },
+  facebook: { label: "Facebook name or profile link", ph: "e.g. Ahmad Razak or facebook.com/…", type: "text" },
+  email: { label: "Sender email", ph: "name@example.com", type: "email", email: true },
+  "walk-in": { label: "Phone number", ph: "e.g. 012-345 6789", type: "tel", phone: true }
+};
+
+/* ================= utils ================= */
+const $ = s => document.querySelector(s);
+function h(tag, p, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(p || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "text") el.textContent = v;
+    else if (k === "html") el.innerHTML = v; // trusted icon markup only
+    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
+    else if (k === "value") el.value = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) { if (c == null || c === false) continue; el.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return el;
+}
+function put(el, ...kids) { el.replaceChildren(...kids.flat(Infinity).filter(x => x != null && x !== false)); }
+const pad = n => String(n).padStart(2, "0");
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function iso(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+function today() { return iso(new Date()); }
+function parseD(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseD(s); d.setDate(d.getDate() + n); return iso(d); }
+function fmtDate(s) { const d = parseD(s); return DAY[d.getDay()] + ", " + pad(d.getDate()) + " " + MON[d.getMonth()] + " " + d.getFullYear(); }
+function fmtShort(s) { const d = parseD(s); return pad(d.getDate()) + " " + MON[d.getMonth()]; }
+function fmtDmy(s) { if (!s) return ""; const [y, m, d] = s.split("-"); return d + "-" + m + "-" + y.slice(2); } // 08-10-26, as in the Excel tracker
+function fmtStamp(t) { if (!t) return ""; const d = new Date(t); return pad(d.getDate()) + " " + MON[d.getMonth()] + ", " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+function caseNo(n) { return "#" + String(n ?? "").padStart(5, "0"); }
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+function errMsg(e) { return (e && (e.message || e.error_description)) || String(e); }
+function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2800); }
+function showBanner(m) { const b = $("#banner"); b.textContent = m; b.hidden = false; }
+function chKey(c) { return String(c || "").toLowerCase().replace(/\s+/g, "-"); }
+function chMeta(c) { return CH_META[chKey(c)] || { label: "Contact", ph: "Phone number, email or name", type: "text" }; }
+function chColor(c) { return CH_META[chKey(c)] ? "var(--c-" + chKey(c) + ")" : "var(--c-other)"; }
+function chIcon(c) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[chKey(c)] || ICONS.other) + "</svg>"; }
+function chip(c) { return h("span", { class: "chip", style: "--tc:" + chColor(c) }, c); }
+function badge(s) { return h("span", { class: "badge b-" + chKey(s) }, s); }
+function nameOf(email, fallback) { const m = S.members.find(x => x.email === email); return m ? m.name : (fallback || email || "—"); }
+function uniq(a) { return [...new Set(a.filter(Boolean))]; }
+
+function normContact(channel, c) {
+  c = String(c || "").trim(); if (!c) return "";
+  const d = c.replace(/\D/g, "");
+  const phoneish = ["call", "whatsapp", "walk-in"].includes(chKey(channel)) || /^[\d\s+()-]+$/.test(c);
+  if (phoneish && d.length >= 7) return d.startsWith("60") ? "0" + d.slice(2) : d;
+  return c.toLowerCase();
+}
+function contactProblem(channel, c) {
+  const m = chMeta(channel); c = String(c || "").trim();
+  if (!c) return "Enter the " + m.label.toLowerCase() + ".";
+  if (m.phone) { const n = normContact(channel, c); if (!/^\d{9,12}$/.test(n)) return "Enter a full phone number, e.g. 012-345 6789."; }
+  if (m.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c)) return "Enter a valid email address.";
+  return "";
+}
+function phoneProblem(p) { p = String(p || "").trim(); if (!p) return ""; const n = normContact("call", p); return /^\d{9,12}$/.test(n) ? "" : "Enter a full phone number, or leave it blank."; }
+
+/* ================= state ================= */
+function blankDraft(ch) { return { channel: ch || null, date: today(), contact: "", dealer: "", dname: "", dphone: "", state: "", topic: "", sub: "", desc: "", caseRef: "", assigned: "", status: "Closed", completed: today(), resolution: "" }; }
+const S = {
+  api: null, email: "", me: null, members: [],
+  channels: DEFAULT_CHANNELS.slice(), topics: [], subs: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(),
+  tab: null, previewRole: "",
+  draft: blankDraft(null), hist: { key: "", rows: [], loading: false, err: "" }, mine: [],
+  cf: { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "", from: addDays(today(), -29), to: today() },
+  cases: { rows: [], count: 0 },
+  rp: { preset: "today", from: today(), to: today(), staff: "" }, rpRows: []
+};
+function role() { return S.previewRole || (S.me && S.me.role) || "staff"; }
+function canEdit(r) { return role() !== "staff" || r.staff_email === S.email; }
+function caseFields(d) {
+  return { case_date: d.date || today(), channel: d.channel, contact: d.contact.trim(), contact_norm: normContact(d.channel, d.contact),
+    dealer_id: d.dealer.trim().toUpperCase() || null, dealer_name: d.dname.trim() || null, dealer_phone: d.dphone.trim() || null, state: d.state || null,
+    topic: d.topic || null, sub_issue: d.sub || null, description: d.desc.trim(), case_ref: d.caseRef.trim().toUpperCase() || null,
+    assigned_to: d.assigned.trim() || null, status: d.status, completed_on: d.status === "Closed" ? (d.completed || today()) : null, resolution: d.resolution.trim() || null };
+}
+function rowToDraft(r) {
+  return { channel: r.channel, date: r.case_date, contact: r.contact || "", dealer: r.dealer_id || "", dname: r.dealer_name || "", dphone: r.dealer_phone || "", state: r.state || "",
+    topic: r.topic || "", sub: r.sub_issue || "", desc: r.description || "", caseRef: r.case_ref || "", assigned: r.assigned_to || "", status: r.status, completed: r.completed_on || today(), resolution: r.resolution || "" };
+}
+
+/* ================= data: Supabase ================= */
+function q2(v) { return '"' + String(v).replace(/["\\*]/g, "") + '"'; }
+function supaApi() {
+  const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  const CASES = "crm_cases";
+  function filt(q, f) {
+    if (f.from) q = q.gte("case_date", f.from);
+    if (f.to) q = q.lte("case_date", f.to);
+    if (f.channel) q = q.eq("channel", f.channel);
+    if (f.topic === "__none") q = q.is("topic", null); else if (f.topic) q = q.eq("topic", f.topic);
+    if (f.sub === "__none") q = q.is("sub_issue", null); else if (f.sub) q = q.eq("sub_issue", f.sub);
+    if (f.state === "__none") q = q.is("state", null); else if (f.state) q = q.eq("state", f.state);
+    if (f.status) q = q.eq("status", f.status);
+    if (f.staff) q = q.eq("staff_email", f.staff);
+    const s = (f.q || "").trim();
+    if (s) {
+      const parts = ["description", "contact", "dealer_id", "dealer_name", "case_ref", "topic", "assigned_to"].map(c => c + ".ilike." + q2("*" + s + "*"));
+      const digits = s.replace(/\D/g, "");
+      if (digits.length >= 4) { const d = digits.startsWith("60") ? digits.slice(2) : digits.replace(/^0/, ""); parts.push("contact_norm.ilike." + q2("*" + d + "*"), "dealer_phone_norm.ilike." + q2("*" + d + "*")); }
+      const n = s.replace(/^#/, "");
+      if (/^\d{1,9}$/.test(n)) parts.push("case_no.eq." + Number(n));
+      q = q.or(parts.join(","));
+    }
+    return q;
+  }
+  return {
+    sb,
+    async session() { const { data } = await sb.auth.getSession(); return data.session; },
+    async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+    async microsoft() { const { error } = await sb.auth.signInWithOAuth({ provider: "azure", options: { scopes: "email openid profile", redirectTo: location.origin + location.pathname } }); if (error) throw error; },
+    async reset(email) { const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error; },
+    async setPassword(pw) { const { error } = await sb.auth.updateUser({ password: pw }); if (error) throw error; },
+    async signOut() { await sb.auth.signOut(); location.replace(location.pathname); },
+    async members() { const { data, error } = await sb.from("crm_members").select("*").order("sort").order("name"); if (error) throw error; return data || []; },
+    async settings() { const { data, error } = await sb.from("crm_settings").select("*").eq("id", 1).maybeSingle(); if (error) throw error; return data; },
+    async saveSettings(s) { const { error } = await sb.from("crm_settings").update({ topics: s.topics, sub_issues: s.subs, channels: s.channels, states: s.states, updated_at: new Date().toISOString() }).eq("id", 1); if (error) throw error; },
+    async saveMember(m) { const { error } = await sb.from("crm_members").upsert({ email: m.email, name: m.name, role: m.role, active: m.active, sort: m.sort ?? 0 }); if (error) throw error; },
+    async listCases(f, off, lim, asc) {
+      const { data, error, count } = await filt(sb.from(CASES).select("*", { count: "exact" }), f).order("case_date", { ascending: !!asc }).order("created_at", { ascending: !!asc }).range(off, off + lim - 1);
+      if (error) throw error; return { rows: data || [], count: count || 0 };
+    },
+    async reportCases(from, to, staff) {
+      const out = [];
+      for (let off = 0; off < 100000; off += 1000) {
+        let q = sb.from(CASES).select("*").gte("case_date", from).lte("case_date", to).order("case_date").order("created_at").range(off, off + 999);
+        if (staff) q = q.eq("staff_email", staff);
+        const { data, error } = await q; if (error) throw error;
+        out.push(...data); if (data.length < 1000) break;
+      }
+      return out;
+    },
+    async history(norm, dealer) {
+      const parts = [];
+      if (norm) parts.push("contact_norm.eq." + q2(norm), "dealer_phone_norm.eq." + q2(norm));
+      if (dealer) parts.push("dealer_id.eq." + q2(dealer));
+      const { data, error } = await sb.from(CASES).select("*").or(parts.join(",")).order("created_at", { ascending: false }).limit(15);
+      if (error) throw error; return data || [];
+    },
+    async saveCase(id, row) {
+      const res = id ? await sb.from(CASES).update(row).eq("id", id).select().single() : await sb.from(CASES).insert(row).select().single();
+      if (res.error) throw res.error; return res.data;
+    },
+    async deleteCase(id) { const { error } = await sb.from(CASES).delete().eq("id", id); if (error) throw error; },
+    subscribe(cb) { sb.channel("crm-cases").on("postgres_changes", { event: "*", schema: "public", table: CASES }, cb).subscribe(); }
+  };
+}
+
+/* ================= data: preview (no database) ================= */
+function demoApi() {
+  const me = "you@demo.local";
+  const members = [
+    { email: me, name: "You (preview)", role: "manager", active: true, sort: 0 },
+    { email: "aina@demo.local", name: "Aina", role: "staff", active: true, sort: 1 },
+    { email: "farid@demo.local", name: "Farid", role: "staff", active: true, sort: 2 },
+    { email: "kavitha@demo.local", name: "Kavitha", role: "staff", active: true, sort: 3 },
+    { email: "mei@demo.local", name: "Mei Ling", role: "supervisor", active: true, sort: 4 }
+  ];
+  const settings = { channels: DEFAULT_CHANNELS.slice(), topics: ["HIERARCHY", "CP58", "INCENTIVE", "REGISTER", "ERECHARGE"], sub_issues: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice() };
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const dealers = [["DYSD113597", "CH'NG SHU FEN", "601113341344", "WILAYAH"], ["DYSD63545", "LAM SHIN SHIN", "601156869280", "SARAWAK"], ["D25979", "DREG_LIM POH TUAN", "60127232109", "JOHOR"], ["DYSD103833", "JOM XOX SDN BHD", "601156666061", "PERAK"], ["DYSD108400", "TEE POH CHIN", "60182818773", "SELANGOR"], ["DYSD114208", "LAYANG ANAK SOA", "60128082775", "SARAWAK"]];
+  const descs = ["Check status hierarchy", "Request CP58", "Request payment incentive (3rd party)", "eKYC timeout during IC capture", "Check status top-up", "Outstanding incentive not received"];
+  const cases = []; let seq = 0;
+  for (let i = 20; i >= 0; i--) {
+    const n = 2 + Math.floor(rnd() * 6);
+    for (let j = 0; j < n; j++) {
+      const ch = pick(["Email", "Email", "Call", "WhatsApp", "WhatsApp", "Facebook", "Walk-In"]); const st = pick(members); const dl = pick(dealers);
+      const day = addDays(today(), -i); const d = parseD(day); d.setHours(9 + Math.floor(rnd() * 9), Math.floor(rnd() * 60));
+      const contact = ch === "Email" ? "dealer" + Math.floor(rnd() * 90) + "@gmail.com" : ch === "Facebook" ? dl[1] : dl[2];
+      const status = i > 2 ? pick(["Closed", "Closed", "Closed", "Follow-up"]) : pick(STATUSES);
+      cases.push({ id: "d" + (++seq), case_no: seq, case_date: day, created_at: d.toISOString(), channel: ch, contact, contact_norm: normContact(ch, contact),
+        dealer_id: dl[0], dealer_name: dl[1], dealer_phone: dl[2], dealer_phone_norm: normContact("call", dl[2]), state: dl[3],
+        topic: pick(settings.topics), sub_issue: pick(DEFAULT_SUBS), description: pick(descs), case_ref: "CA" + day.slice(8) + day.slice(5, 7) + day.slice(0, 4) + "-65" + (30000 + seq),
+        assigned_to: null, status, completed_on: status === "Closed" ? day : null, resolution: null, staff_email: st.email, staff_name: st.name, updated_at: d.toISOString(), updated_by: st.email });
+    }
+  }
+  function match(r, f) {
+    if (f.from && r.case_date < f.from) return false; if (f.to && r.case_date > f.to) return false;
+    for (const [k, col] of [["channel", "channel"], ["topic", "topic"], ["sub", "sub_issue"], ["state", "state"], ["status", "status"], ["staff", "staff_email"]]) {
+      if (f[k] === "__none" ? r[col] : (f[k] && r[col] !== f[k])) return false;
+    }
+    const s = (f.q || "").trim().toLowerCase();
+    if (s) {
+      const digits = s.replace(/\D/g, ""); const dd = digits.replace(/^60/, "").replace(/^0/, "");
+      const hit = [r.description, r.contact, r.dealer_id, r.dealer_name, r.case_ref, r.topic, r.assigned_to].some(x => String(x || "").toLowerCase().includes(s))
+        || (digits.length >= 4 && (r.contact_norm.includes(dd) || String(r.dealer_phone_norm || "").includes(dd))) || String(r.case_no) === s.replace(/^#/, "");
+      if (!hit) return false;
+    }
+    return true;
+  }
+  const sorted = asc => cases.slice().sort((a, b) => (a.case_date + a.created_at).localeCompare(b.case_date + b.created_at) * (asc ? 1 : -1));
+  return {
+    async session() { return { user: { email: me } }; },
+    async signOut() { location.reload(); },
+    async members() { return members.map(m => ({ ...m })); },
+    async settings() { return JSON.parse(JSON.stringify(settings)); },
+    async saveSettings(s) { settings.topics = s.topics; settings.sub_issues = s.subs; settings.channels = s.channels; settings.states = s.states; },
+    async saveMember(m) { const i = members.findIndex(x => x.email === m.email); if (i >= 0) members[i] = { ...members[i], ...m }; else members.push({ ...m }); },
+    async listCases(f, off, lim, asc) { const all = sorted(asc).filter(r => match(r, f)); return { rows: all.slice(off, off + lim), count: all.length }; },
+    async reportCases(from, to, staff) { return sorted(true).filter(r => match(r, { from, to, staff })); },
+    async history(norm, dealer) { return sorted(false).filter(r => (norm && (r.contact_norm === norm || r.dealer_phone_norm === norm)) || (dealer && r.dealer_id === dealer)).slice(0, 15); },
+    async saveCase(id, row) {
+      const now = new Date().toISOString();
+      const clean = { ...row, contact_norm: normContact(row.channel, row.contact), dealer_phone_norm: row.dealer_phone ? normContact("call", row.dealer_phone) : "" };
+      if (id) { const i = cases.findIndex(x => x.id === id); cases[i] = { ...cases[i], ...clean, updated_at: now, updated_by: me }; return cases[i]; }
+      const r = { ...clean, id: "d" + (++seq), case_no: seq, created_at: now, updated_at: now, updated_by: me, staff_email: me, staff_name: members[0].name };
+      cases.push(r); return r;
+    },
+    async deleteCase(id) { const i = cases.findIndex(x => x.id === id); if (i >= 0) cases.splice(i, 1); },
+    subscribe() {}
+  };
+}
+
+/* ================= boot & auth ================= */
+async function boot() {
+  document.title = APP_NAME;
+  S.api = LIVE ? supaApi() : demoApi();
+  if (!LIVE) showBanner("Preview mode: not connected to a database, so nothing is saved. Add your Supabase details to config.js to go live.");
+  if (LIVE) S.api.sb.auth.onAuthStateChange(ev => { if (ev === "PASSWORD_RECOVERY") renderSetPassword(); });
+  let session = null;
+  try { session = await S.api.session(); } catch (e) { console.error(e); }
+  if (!session) return renderSignIn(HASH_ERR);
+  if (AUTH_TYPE === "recovery" || AUTH_TYPE === "invite") return renderSetPassword();
+  await enter(session);
+}
+async function enter(session) {
+  S.email = String(session.user.email || "").toLowerCase();
+  put($("#main"), h("div", { class: "loading" }, "Loading…"));
+  try { await loadCore(); }
+  catch (e) { console.error(e); return renderProblem("The tracker data didn’t load. Check your connection and reload. If the message mentions a missing column or table, run the latest schema.sql in Supabase.", e); }
+  S.me = S.members.find(m => m.active && m.email === S.email) || null;
+  if (!S.me) return renderNoAccess();
+  S.draft = blankDraft(S.channels[0]);
+  S.tab = "lodge"; renderTop(); go("lodge");
+  S.api.subscribe(() => scheduleRefresh());
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) scheduleRefresh(); });
+}
+async function loadCore() {
+  const [members, st] = await Promise.all([S.api.members(), S.api.settings()]);
+  S.members = members.map(m => ({ ...m, email: String(m.email).toLowerCase() }));
+  const arr = (v, d) => Array.isArray(v) && v.length ? v : d;
+  S.channels = arr(st && st.channels, DEFAULT_CHANNELS.slice());
+  S.topics = (st && Array.isArray(st.topics)) ? st.topics : [];
+  S.subs = (st && Array.isArray(st.sub_issues)) ? st.sub_issues : DEFAULT_SUBS.slice();
+  S.states = arr(st && st.states, DEFAULT_STATES.slice());
+  put($("#dl-assign"), S.members.filter(m => m.active).map(m => h("option", { value: m.name })));
+}
+
+function centerCard(...kids) { $("#tabs").hidden = true; put($("#top"), h("div", { class: "brand" }, h("h1", { text: APP_NAME }))); put($("#main"), h("div", { class: "welcome" }, h("div", { class: "card" }, kids))); }
+function renderSignIn(err) {
+  const email = h("input", { type: "email", id: "si-email", autocomplete: "username", required: true });
+  const pw = h("input", { type: "password", id: "si-pw", autocomplete: "current-password", required: true });
+  const msg = h("p", { class: "small", style: "color:var(--danger)", text: err || "" });
+  const btn = h("button", { class: "btn primary", type: "submit" }, "Sign in");
+  centerCard(h("h2", { text: "Sign in" }), h("p", { class: "muted small", text: "Use the email your manager added to the team list." }),
+    h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+      e.preventDefault(); msg.textContent = ""; btn.disabled = true;
+      try { await S.api.signIn(email.value.trim(), pw.value); await enter(await S.api.session()); }
+      catch (x) { msg.textContent = /invalid/i.test(errMsg(x)) ? "That email and password don’t match. Check both, or reset your password below." : "Sign-in failed: " + errMsg(x); btn.disabled = false; }
+    } }, h("div", { class: "field" }, h("label", { for: "si-email" }, "Work email"), email), h("div", { class: "field" }, h("label", { for: "si-pw" }, "Password"), pw), btn, msg),
+    h("button", { class: "linkbtn", style: "align-self:flex-start", onclick: renderReset }, "Forgot or never set a password?"),
+    CFG.microsoftSignIn ? [h("div", { class: "or" }, "or"), h("button", { class: "btn", onclick: async () => { try { await S.api.microsoft(); } catch (x) { msg.textContent = "Microsoft sign-in didn’t start: " + errMsg(x); } } }, "Sign in with Microsoft")] : null);
+  setTimeout(() => email.focus(), 0);
+}
+function renderReset() {
+  const email = h("input", { type: "email", id: "rs-email", autocomplete: "username", required: true });
+  const msg = h("p", { class: "small" }); const btn = h("button", { class: "btn primary", type: "submit" }, "Send reset link");
+  centerCard(h("h2", { text: "Set or reset your password" }), h("p", { class: "muted small", text: "We’ll email you a link. Open it on this device to choose a new password." }),
+    h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+      e.preventDefault(); btn.disabled = true; msg.style.color = "";
+      try { await S.api.reset(email.value.trim()); msg.textContent = "Link sent. Check your inbox (and junk folder)."; }
+      catch (x) { msg.style.color = "var(--danger)"; msg.textContent = "Couldn’t send the link: " + errMsg(x); btn.disabled = false; }
+    } }, h("div", { class: "field" }, h("label", { for: "rs-email" }, "Work email"), email), btn, msg),
+    h("button", { class: "linkbtn", style: "align-self:flex-start", onclick: () => renderSignIn() }, "Back to sign in"));
+  setTimeout(() => email.focus(), 0);
+}
+function renderSetPassword() {
+  const a = h("input", { type: "password", id: "np1", autocomplete: "new-password", required: true });
+  const b = h("input", { type: "password", id: "np2", autocomplete: "new-password", required: true });
+  const msg = h("p", { class: "small", style: "color:var(--danger)" }); const btn = h("button", { class: "btn primary", type: "submit" }, "Save password");
+  centerCard(h("h2", { text: "Choose a password" }),
+    h("form", { class: "stack", style: "gap:12px", onsubmit: async e => {
+      e.preventDefault(); msg.textContent = "";
+      if (a.value.length < 8) return msg.textContent = "Use at least 8 characters.";
+      if (a.value !== b.value) return msg.textContent = "The two passwords don’t match.";
+      btn.disabled = true;
+      try { await S.api.setPassword(a.value); history.replaceState(null, "", location.pathname); toast("Password saved"); await enter(await S.api.session()); }
+      catch (x) { msg.textContent = "Couldn’t save the password: " + errMsg(x); btn.disabled = false; }
+    } }, h("div", { class: "field" }, h("label", { for: "np1" }, "New password"), a, h("span", { class: "hint" }, "At least 8 characters.")),
+       h("div", { class: "field" }, h("label", { for: "np2" }, "Type it again"), b), btn, msg));
+  setTimeout(() => a.focus(), 0);
+}
+function renderNoAccess() {
+  centerCard(h("h2", { text: "You’re not on the team list yet" }),
+    h("p", { class: "muted" }, "Signed in as ", h("b", { text: S.email || "(no email)" }), ". Ask your manager to add this exact email under Team & lists, then reload."),
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => location.reload() }, "Reload"), h("button", { class: "btn", onclick: () => S.api.signOut() }, "Sign out")));
+}
+function renderProblem(m, e) {
+  centerCard(h("h2", { text: "The app couldn’t load" }), h("p", { class: "muted", text: m }),
+    e ? h("pre", { class: "small", style: "white-space:pre-wrap;background:var(--sunk);padding:10px;border-radius:8px;margin:0", text: errMsg(e) }) : null,
+    h("div", { class: "actions" }, h("button", { class: "btn", onclick: () => location.reload() }, "Reload"), h("button", { class: "btn", onclick: () => S.api.signOut() }, "Sign out")));
+}
+
+/* ================= shell ================= */
+function tabsFor() {
+  const r = role();
+  const t = [["lodge", "Lodge case"], ["cases", r === "staff" ? "Tracker" : "Tracker"], ["summary", r === "staff" ? "My summary" : "Summary"]];
+  if (r === "manager") t.push(["settings", "Team & lists"]);
+  return t;
+}
+function renderTop() {
+  const preview = !LIVE ? h("label", { class: "small muted", style: "display:flex;gap:6px;align-items:center" }, "Preview as",
+    h("select", { style: "width:auto;padding:4px 8px", onchange: e => { S.previewRole = e.target.value === "manager" ? "" : e.target.value; if (!tabsFor().some(t => t[0] === S.tab)) S.tab = "lodge"; renderTop(); go(S.tab); } },
+      Object.entries(ROLES).map(([k, l]) => h("option", { value: k, selected: role() === k ? true : null }, l)))) : null;
+  put($("#top"), h("div", { class: "brand" }, h("h1", { text: APP_NAME }), h("span", { class: "muted small", text: fmtDate(today()) })),
+    h("div", { class: "who" }, preview, h("span", { class: "nm", text: S.me.name }), h("span", { class: "role", text: ROLES[role()] }), h("button", { class: "btn sm", onclick: () => S.api.signOut() }, "Sign out")));
+  renderTabs();
+}
+function renderTabs() { const t = $("#tabs"); t.hidden = false; put(t, tabsFor().map(([k, l]) => h("button", { class: "tab", role: "tab", "aria-selected": String(S.tab === k), onclick: () => go(k) }, l))); }
+function go(k) { S.tab = k; renderTabs(); ({ lodge: renderLodge, cases: renderCases, summary: renderSummary, settings: renderSettings })[k](); }
+const scheduleRefresh = debounce(async () => {
+  if (!S.me) return;
+  try {
+    if (S.tab === "lodge") { await loadMine(); renderMine(); }
+    else if (S.tab === "cases" && !$("#dlg").open) await reloadCases();
+    else if (S.tab === "summary") await loadSummary();
+  } catch (e) { console.warn("refresh failed", e); }
+}, 700);
+
+/* ================= shared form fields ================= */
+// Builds the case fields bound to a draft object. Used by the lodge form and the edit dialog.
+function caseForm(d, opt) {
+  const ro = opt.readonly ? true : null; const pre = opt.prefix;
+  const id = k => pre + "-" + k;
+  const m = chMeta(d.channel);
+  const sel = (k, list, prop, placeholder) => {
+    const s = h("select", { id: id(k), disabled: ro, onchange: e => { d[prop] = e.target.value; clearErr(pre, k); } },
+      h("option", { value: "" }, placeholder), uniq([...list, d[prop]]).map(v => h("option", { value: v }, v)));
+    s.value = d[prop]; return s;
+  };
+  const inp = (k, prop, attrs, onIn) => h("input", Object.assign({ id: id(k), value: d[prop], readonly: ro, autocomplete: "off",
+    oninput: e => { d[prop] = e.target.value; clearErr(pre, k); onIn && onIn(); } }, attrs));
+  const topicEl = S.topics.length || d.topic ? sel("topic", S.topics, "topic", "Select")
+    : h("p", { class: "small muted", style: "padding:9px 0" }, role() === "manager" ? "No main issues yet. Add them under Team & lists." : "No main issues yet. Your manager will add them.");
+  const desc = h("textarea", { id: id("desc"), rows: "4", readonly: ro, placeholder: "e.g. 0182818773 - Check status top-up", oninput: e => { d.desc = e.target.value; clearErr(pre, "desc"); } }); desc.value = d.desc;
+  const res = h("textarea", { id: id("res"), rows: "2", readonly: ro, style: "min-height:60px", placeholder: "Action taken or next step", oninput: e => d.resolution = e.target.value }); res.value = d.resolution;
+  const completed = h("input", { type: "date", id: id("done"), value: d.completed, readonly: ro, max: today(), onchange: e => d.completed = e.target.value });
+  const doneWrap = h("div", { class: "field", id: id("w-done"), hidden: d.status !== "Closed" ? true : null }, h("label", { for: id("done") }, "Date completed"), completed);
+  const statusSet = h("div", { class: "status-set", role: "radiogroup", "aria-label": "Status" }, STATUSES.map(s => h("label", {},
+    h("input", { type: "radio", name: id("status"), value: s, disabled: ro, checked: d.status === s ? true : null,
+      onchange: () => { d.status = s; $("#" + id("w-done")).hidden = s !== "Closed"; if (s === "Closed" && !d.completed) { d.completed = today(); completed.value = d.completed; } } }), s)));
+  const contact = inp("contact", "contact", { type: m.type, inputmode: m.phone ? "tel" : null, placeholder: m.ph }, opt.onLookup);
+  if (m.phone && opt.onLookup) contact.addEventListener("blur", () => { if (!d.dphone && !contactProblem(d.channel, d.contact)) { d.dphone = d.contact.trim(); const f = $("#" + id("dphone")); if (f) f.value = d.dphone; } });
+
+  return [
+    h("div", { class: "row2" },
+      fieldWrap(pre, "contact", h("span", { id: id("contact-l") }, m.label), contact),
+      fieldWrap(pre, "date", "Date", h("input", { type: "date", id: id("date"), value: d.date, max: today(), readonly: ro, onchange: e => d.date = e.target.value || today() }))),
+    h("hr", { class: "divider" }),
+    h("div", { class: "row2" },
+      fieldWrap(pre, "dealer", h("span", {}, "Dealer ID ", h("span", { class: "opt" }, "(if any)")), inp("dealer", "dealer", { type: "text", class: "up", placeholder: "e.g. DYSD113597" }, opt.onLookup)),
+      fieldWrap(pre, "dname", "Dealer name", inp("dname", "dname", { type: "text", class: "up", placeholder: "Name or company" }))),
+    h("div", { class: "row2" },
+      fieldWrap(pre, "dphone", h("span", {}, "Fon no ", h("span", { class: "opt" }, "(dealer’s phone)")), inp("dphone", "dphone", { type: "tel", inputmode: "tel", placeholder: "e.g. 601113341344" })),
+      fieldWrap(pre, "state", "State", sel("state", S.states, "state", "Select"))),
+    h("hr", { class: "divider" }),
+    h("div", { class: "row2" }, fieldWrap(pre, "topic", "Main issue", topicEl), fieldWrap(pre, "sub", "Sub issue", sel("sub", S.subs, "sub", "Select"))),
+    fieldWrap(pre, "desc", "Description", desc),
+    h("div", { class: "row2" },
+      fieldWrap(pre, "caseRef", h("span", {}, "Case no. ", h("span", { class: "opt" }, "(from CRM, if any)")), inp("caseRef", "caseRef", { type: "text", class: "up", placeholder: "e.g. CA07102026-6532688" })),
+      fieldWrap(pre, "assigned", h("span", {}, "Assigned to ", h("span", { class: "opt" }, "(if escalated)")), inp("assigned", "assigned", { type: "text", list: "dl-assign", placeholder: "Person or team" }))),
+    h("div", { class: "row2", style: "align-items:end" }, h("div", { class: "field" }, h("span", { class: "lbl" }, "Status"), statusSet), doneWrap),
+    h("div", { class: "field" }, h("label", { for: id("res") }, "Remarks ", h("span", { class: "opt" }, "(optional)")), res)
+  ];
+}
+function fieldWrap(pre, key, label, el) { return h("div", { class: "field", id: pre + "-w-" + key }, h("label", { for: el.id || null }, label), el, h("span", { class: "err", id: pre + "-e-" + key })); }
+function clearErr(pre, k) { const e = $("#" + pre + "-e-" + k); if (e) e.textContent = ""; $("#" + pre + "-w-" + k)?.querySelector("[aria-invalid]")?.removeAttribute("aria-invalid"); }
+function validate(d, pre) {
+  const errs = {};
+  const cp = contactProblem(d.channel, d.contact); if (cp) errs.contact = cp;
+  const pp = phoneProblem(d.dphone); if (pp) errs.dphone = pp;
+  if (S.topics.length && !d.topic) errs.topic = "Select the main issue.";
+  if (!d.desc.trim()) errs.desc = "Describe what the case is about.";
+  for (const k of ["contact", "dphone", "topic", "desc"]) {
+    const e = $("#" + pre + "-e-" + k); if (e) e.textContent = errs[k] || "";
+    const inp = $("#" + pre + "-w-" + k)?.querySelector("input,select,textarea"); if (inp) { if (errs[k]) inp.setAttribute("aria-invalid", "true"); else inp.removeAttribute("aria-invalid"); }
+  }
+  const first = Object.keys(errs)[0];
+  if (first) { $("#" + pre + "-w-" + first)?.querySelector("input,select,textarea")?.focus(); return false; }
+  return true;
+}
+
+/* ================= lodge ================= */
+function renderLodge() {
+  const d = S.draft; if (!d.channel || !S.channels.includes(d.channel)) d.channel = S.channels[0];
+  const tiles = h("div", { class: "channels", role: "group", "aria-label": "Source" },
+    S.channels.map((c, i) => h("button", { type: "button", class: "chtile", "aria-pressed": String(d.channel === c), style: "--tc:" + chColor(c), title: i < 9 ? "Alt+" + (i + 1) : null,
+      onclick: () => setChannel(c), html: chIcon(c) + "<span>" + c.replace(/</g, "&lt;") + "</span>" })));
+  const form = h("div", { class: "card formcard stack", style: "--ch:" + chColor(d.channel) },
+    caseForm(d, { prefix: "f", onLookup: histSoon }),
+    h("p", { class: "filled", id: "f-filled", hidden: true }),
+    h("div", { class: "actions" }, h("button", { class: "btn primary", id: "save-btn", type: "button", onclick: saveDraft }, "Save case"),
+      h("button", { class: "btn", type: "button", onclick: () => { S.draft = blankDraft(d.channel); S.hist = { key: "", rows: [] }; renderLodge(); focusContact(); } }, "Clear"),
+      h("span", { class: "kbd" }, "Ctrl+Enter saves. Alt+1–" + Math.min(9, S.channels.length) + " switches source.")));
+  put($("#main"),
+    h("div", { class: "lodge" }, h("div", {}, tiles, form),
+      h("aside", { class: "card", style: "position:sticky;top:12px" }, h("div", { class: "head", style: "margin-bottom:6px" }, h("h3", { text: "Earlier cases" })), h("div", { id: "hist" }))),
+    h("section", { class: "card", style: "margin-top:20px" }, h("div", { class: "head" }, h("h3", { text: "Your cases today" }), h("span", { class: "muted small", id: "mine-count" })), h("div", { id: "mine" })));
+  renderHist(); renderMine();
+  loadMine().then(renderMine).catch(e => console.warn(e));
+}
+function focusContact() { setTimeout(() => $("#f-contact")?.focus(), 0); }
+function setChannel(c) { S.draft.channel = c; renderLodge(); focusContact(); histSoon(); }
+async function saveDraft() {
+  const d = S.draft; if (!validate(d, "f")) return;
+  const btn = $("#save-btn"); btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const row = await S.api.saveCase(null, caseFields(d));
+    toast("Case " + caseNo(row.case_no) + " saved");
+    S.draft = blankDraft(d.channel); S.hist = { key: "", rows: [] };
+    renderLodge(); focusContact();
+  } catch (e) { toast("Case not saved: " + errMsg(e)); btn.disabled = false; btn.textContent = "Save case"; }
+}
+
+const histSoon = debounce(loadHist, 400);
+async function loadHist() {
+  if (S.tab !== "lodge") return;
+  const d = S.draft;
+  const n = normContact(d.channel, d.contact); const useN = n.length >= 6 ? n : "";
+  const dl = d.dealer.trim().toUpperCase(); const useD = dl.length >= 3 ? dl : "";
+  const key = useN + "|" + useD;
+  if (key === S.hist.key) return;
+  S.hist = { key, rows: [], loading: !!(useN || useD), err: "", n: useN, d: useD }; renderHist();
+  if (!useN && !useD) return;
+  try { const rows = await S.api.history(useN, useD); if (S.hist.key !== key) return; S.hist.rows = rows; autofill(rows); }
+  catch (e) { if (S.hist.key !== key) return; S.hist.err = errMsg(e); }
+  S.hist.loading = false; renderHist();
+}
+// Fill empty dealer fields from the most recent case for the same dealer ID (or, failing that, the same number/email).
+function autofill(rows) {
+  const d = S.draft; const H = S.hist;
+  const src = (H.d && rows.find(r => r.dealer_id === H.d)) || (!d.dealer.trim() && H.n && rows.find(r => r.dealer_id && (r.contact_norm === H.n || r.dealer_phone_norm === H.n)));
+  if (!src) return;
+  const map = [["dealer", "dealer_id"], ["dname", "dealer_name"], ["dphone", "dealer_phone"], ["state", "state"]];
+  const got = [];
+  for (const [k, col] of map) if (!String(d[k]).trim() && src[col]) { d[k] = src[col]; const el = $("#f-" + k); if (el) { if (el.tagName === "SELECT" && ![...el.options].some(o => o.value === src[col])) el.append(h("option", { value: src[col] }, src[col])); el.value = src[col]; } got.push(k); }
+  const note = $("#f-filled");
+  if (got.length && note) { note.hidden = false; note.textContent = "Dealer details filled from case " + caseNo(src.case_no) + ". Check they’re still correct."; }
+}
+function renderHist() {
+  const box = $("#hist"); if (!box) return; const H = S.hist;
+  if (!H.key || H.key === "|") return put(box, h("p", { class: "empty" }, "Type a number, email or dealer ID. Earlier cases appear here, and known dealer details fill in for you."));
+  if (H.loading) return put(box, h("p", { class: "empty" }, "Looking up earlier cases…"));
+  if (H.err) return put(box, h("p", { class: "empty", style: "color:var(--danger)" }, "Lookup failed: " + H.err));
+  if (!H.rows.length) return put(box, h("p", { class: "empty" }, "No earlier cases. This looks like a first contact."));
+  put(box, h("p", { class: "small muted", style: "margin-bottom:4px" }, H.rows.length + (H.rows.length === 15 ? "+ " : " ") + (H.rows.length === 1 ? "case" : "cases") + " found"),
+    h("div", { class: "hist" }, H.rows.map(r => h("button", { class: "hitem", type: "button", onclick: () => openCase(r) },
+      h("div", { class: "hmeta" }, h("span", { class: "cno", text: caseNo(r.case_no) }), h("span", { class: "muted", text: fmtDmy(r.case_date) }), chip(r.channel), badge(r.status)),
+      h("div", { class: "hmeta", style: "margin-top:2px" }, h("span", { text: [r.topic, r.sub_issue].filter(Boolean).join(" / ") }),
+        h("span", { class: "match", text: [H.n && (r.contact_norm === H.n || r.dealer_phone_norm === H.n) ? "same number/email" : null, H.d && r.dealer_id === H.d ? "same dealer" : null].filter(Boolean).join(", ") })),
+      r.dealer_name ? h("div", { class: "small", text: (r.dealer_id ? r.dealer_id + " " : "") + r.dealer_name }) : null,
+      h("div", { class: "hdesc", text: r.description })))));
+}
+async function loadMine() { const { rows } = await S.api.listCases({ from: today(), to: today(), staff: S.email }, 0, 200); S.mine = rows; }
+function renderMine() {
+  const box = $("#mine"); if (!box) return;
+  $("#mine-count").textContent = S.mine.length ? S.mine.length + (S.mine.length === 1 ? " case" : " cases") : "";
+  if (!S.mine.length) return put(box, h("p", { class: "empty" }, "Nothing lodged yet today. Cases you save appear here."));
+  put(box, trackerTable(S.mine, false));
+}
+
+/* Columns follow the Excel tracker: NO, DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE, REMARKS */
+function trackerTable(rows, showStaff) {
+  return h("div", { class: "tblwrap" }, h("table", { class: "tracker" },
+    h("thead", {}, h("tr", {}, ["No", "Date", "Dealer ID", "Fon no", "Dealer name", "State", "Main issue", "Sub issue", "Description", "Case", "Assigned to", "Status", "Completed", "Source", "Contact"].map(t => h("th", {}, t)), showStaff ? h("th", {}, "Logged by") : null)),
+    h("tbody", {}, rows.map(r => h("tr", { class: "click", tabindex: "0", onclick: () => openCase(r), onkeydown: e => { if (e.key === "Enter") openCase(r); } },
+      h("td", { class: "cno", text: caseNo(r.case_no) }), h("td", { class: "nowrap", text: fmtDmy(r.case_date) }),
+      h("td", { class: "nowrap", text: r.dealer_id || "" }), h("td", { class: "nowrap", text: r.dealer_phone || "" }), h("td", { class: "nowrap", text: r.dealer_name || "" }),
+      h("td", { class: "nowrap", text: r.state || "" }), h("td", { class: "nowrap", text: r.topic || "" }), h("td", { class: "nowrap", text: r.sub_issue || "" }),
+      h("td", { class: "clip", title: r.description, text: r.description }), h("td", { class: "nowrap", text: r.case_ref || "" }), h("td", { class: "nowrap", text: r.assigned_to || "" }),
+      h("td", {}, badge(r.status)), h("td", { class: "nowrap", text: fmtDmy(r.completed_on) }), h("td", {}, chip(r.channel)),
+      h("td", { class: "nowrap", text: r.contact }), showStaff ? h("td", { class: "nowrap", text: nameOf(r.staff_email, r.staff_name) }) : null)))));
+}
+
+/* ================= case dialog ================= */
+function openCase(r) {
+  const dlg = $("#dlg"); const editable = canEdit(r); const d = rowToDraft(r);
+  const err = h("p", { class: "small", style: "color:var(--danger)" });
+  const chSel = h("select", { id: "d-ch", disabled: editable ? null : true, onchange: e => { d.channel = e.target.value; $("#d-contact-l").textContent = chMeta(d.channel).label; } },
+    uniq([...S.channels, r.channel]).map(c => h("option", { value: c }, c))); chSel.value = d.channel;
+  const save = async () => {
+    if (!validate(d, "d")) return;
+    try { const row = await S.api.saveCase(r.id, caseFields(d)); dlg.close(); toast("Case " + caseNo(row.case_no) + " updated"); afterChange(); }
+    catch (e) { err.textContent = "Not saved: " + errMsg(e); }
+  };
+  let confirmDel = false;
+  const delBtn = role() === "manager" ? h("button", { class: "btn danger", type: "button", onclick: async e => {
+    if (!confirmDel) { confirmDel = true; e.currentTarget.textContent = "Click again to delete"; return; }
+    try { await S.api.deleteCase(r.id); dlg.close(); toast("Case " + caseNo(r.case_no) + " deleted"); afterChange(); } catch (x) { err.textContent = "Not deleted: " + errMsg(x); }
+  } }, "Delete") : null;
+  put(dlg, h("div", { class: "dlg" },
+    h("div", { class: "dlg-h" }, h("div", {}, h("h2", { text: "Case " + caseNo(r.case_no) }),
+      h("p", { class: "meta" }, "Logged by " + nameOf(r.staff_email, r.staff_name) + " on " + fmtStamp(r.created_at) + (r.updated_by && r.updated_at && r.updated_at !== r.created_at ? ". Last changed by " + nameOf(r.updated_by) + ", " + fmtStamp(r.updated_at) + "." : "."))),
+      h("button", { class: "btn sm", type: "button", onclick: () => dlg.close() }, "Close")),
+    !editable ? h("p", { class: "small muted" }, "You can view this case. Only the person who logged it, or a supervisor, can change it.") : null,
+    h("div", { class: "field", style: "max-width:260px" }, h("label", { for: "d-ch" }, "Source"), chSel),
+    caseForm(d, { prefix: "d", readonly: !editable }),
+    err,
+    editable ? h("div", { class: "actions", style: "justify-content:space-between" }, h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", onclick: save }, "Save changes"), h("button", { class: "btn", type: "button", onclick: () => dlg.close() }, "Cancel")), delBtn) : null));
+  dlg.showModal(); dlg.scrollTop = 0;
+}
+function afterChange() {
+  if (S.tab === "lodge") { S.hist.key = ""; loadHist(); loadMine().then(renderMine); }
+  else if (S.tab === "cases") reloadCases();
+  else if (S.tab === "summary") loadSummary();
+}
+
+/* ================= tracker (all cases) ================= */
+function staffOptions(allLabel) {
+  return [h("option", { value: "" }, allLabel), h("option", { value: S.email }, "Me"),
+    S.members.filter(m => m.email !== S.email).map(m => h("option", { value: m.email }, m.name + (m.active ? "" : " (inactive)")))];
+}
+function listOptions(list, noneLabel) { return [h("option", { value: "" }, "All"), list.map(v => h("option", { value: v }, v)), h("option", { value: "__none" }, noneLabel)]; }
+function renderCases() {
+  const f = S.cf; const set = (k, v) => { f[k] = v; reloadSoon(); };
+  const sel = (id, k, opts) => { const s = h("select", { id, onchange: e => set(k, e.target.value) }, opts); s.value = f[k]; return s; };
+  const fld = (id, label, el) => h("div", { class: "field" }, h("label", { for: id }, label), el);
+  put($("#main"),
+    h("div", { class: "filters" },
+      h("div", { class: "field q" }, h("label", { for: "cf-q" }, "Search"), h("input", { type: "search", id: "cf-q", placeholder: "Dealer ID, name, phone, email, case no. or words", value: f.q, oninput: e => set("q", e.target.value) })),
+      fld("cf-ch", "Source", sel("cf-ch", "channel", [h("option", { value: "" }, "All"), S.channels.map(c => h("option", { value: c }, c))])),
+      fld("cf-tp", "Main issue", sel("cf-tp", "topic", listOptions(S.topics, "Not set"))),
+      fld("cf-sb", "Sub issue", sel("cf-sb", "sub", listOptions(S.subs, "Not set"))),
+      fld("cf-sta", "State", sel("cf-sta", "state", listOptions(S.states, "Not set"))),
+      fld("cf-st", "Status", sel("cf-st", "status", [h("option", { value: "" }, "All"), STATUSES.map(s => h("option", { value: s }, s))])),
+      fld("cf-sf", "Logged by", sel("cf-sf", "staff", staffOptions("Anyone"))),
+      fld("cf-from", "From", h("input", { type: "date", id: "cf-from", value: f.from, onchange: e => set("from", e.target.value) })),
+      fld("cf-to", "To", h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) }))),
+    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel")),
+    h("div", { class: "card", id: "cres", style: "padding:12px 16px" }, h("p", { class: "empty" }, "Loading cases…")));
+  reloadCases();
+}
+const reloadSoon = debounce(() => reloadCases(), 350);
+let casesReq = 0;
+async function reloadCases(append) {
+  const my = ++casesReq; const off = append ? S.cases.rows.length : 0;
+  try {
+    const { rows, count } = await S.api.listCases(S.cf, off, PAGE);
+    if (my !== casesReq) return;
+    S.cases = { rows: append ? S.cases.rows.concat(rows) : rows, count };
+    renderCaseResults();
+  } catch (e) { if (my === casesReq) put($("#cres"), h("p", { class: "empty", style: "color:var(--danger)" }, "Cases didn’t load: " + errMsg(e))); }
+}
+function renderCaseResults() {
+  const box = $("#cres"); if (!box) return; const { rows, count } = S.cases;
+  $("#cres-count").textContent = count === 1 ? "1 case" : count + " cases";
+  if (!rows.length) return put(box, h("p", { class: "empty" }, "No cases match these filters. Widen the dates or clear the search."));
+  put(box, trackerTable(rows, true),
+    rows.length < count ? h("div", { style: "text-align:center;margin-top:14px" }, h("button", { class: "btn", onclick: e => { e.currentTarget.disabled = true; reloadCases(true); } }, "Show " + Math.min(PAGE, count - rows.length) + " more")) : null);
+}
+
+/* ================= Excel export ================= */
+let xlsxReady = null;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  return xlsxReady || (xlsxReady = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = res; s.onerror = () => { xlsxReady = null; rej(new Error("Excel library didn’t load")); }; document.head.append(s); }));
+}
+const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["LOGGED BY", 16]];
+function trackerAoa(rows) {
+  return [TRACKER_COLS.map(c => c[0]), ...rows.map((r, i) => [i + 1, fmtDmy(r.case_date), r.dealer_id || "", r.dealer_phone || "", r.dealer_name || "", r.state || "", r.topic || "", r.sub_issue || "",
+    r.description || "", r.case_ref || "", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", nameOf(r.staff_email, r.staff_name)])];
+}
+function sheet(aoa, widths) { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); return ws; }
+function saveBook(wb, name) { XLSX.writeFile(wb, name); }
+async function exportTracker() {
+  toast("Preparing Excel…");
+  try {
+    await loadXLSX();
+    const all = [];
+    for (let off = 0; off < 20000; off += 1000) { const { rows } = await S.api.listCases(S.cf, off, 1000, true); all.push(...rows); if (rows.length < 1000) break; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet(trackerAoa(all), TRACKER_COLS.map(c => c[1])), "Tracker");
+    saveBook(wb, "DMT-tracker-" + S.cf.from + "-to-" + S.cf.to + ".xlsx");
+    toast(all.length + " cases downloaded");
+  } catch (e) { toast("Download failed: " + errMsg(e)); }
+}
+
+/* ================= summary ================= */
+const PRESETS = [["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["month", "This month"], ["lastmonth", "Last month"], ["custom", "Custom"]];
+function presetRange(p) {
+  const t = today();
+  if (p === "today") return [t, t];
+  if (p === "yesterday") { const y = addDays(t, -1); return [y, y]; }
+  if (p === "7") return [addDays(t, -6), t];
+  if (p === "month") return [t.slice(0, 8) + "01", t];
+  if (p === "lastmonth") { const first = t.slice(0, 8) + "01"; const end = addDays(first, -1); return [end.slice(0, 8) + "01", end]; }
+  return [S.rp.from, S.rp.to];
+}
+function renderSummary() {
+  const r = S.rp; const isStaff = role() === "staff";
+  const presets = h("div", { class: "presets", role: "group", "aria-label": "Date range" }, PRESETS.map(([k, l]) => h("button", { type: "button", "aria-pressed": String(r.preset === k),
+    onclick: () => { r.preset = k; [r.from, r.to] = presetRange(k); renderSummary(); } }, l)));
+  const custom = r.preset === "custom" ? h("div", { class: "actions" },
+    h("input", { type: "date", value: r.from, "aria-label": "From", style: "width:auto", onchange: e => { r.from = e.target.value; loadSummary(); } }), h("span", { class: "muted" }, "to"),
+    h("input", { type: "date", value: r.to, "aria-label": "To", style: "width:auto", onchange: e => { r.to = e.target.value; loadSummary(); } })) : null;
+  let staffSel = null;
+  if (!isStaff) { staffSel = h("select", { style: "width:auto", "aria-label": "Staff", onchange: e => { r.staff = e.target.value; loadSummary(); } }, staffOptions("Whole team")); staffSel.value = r.staff; }
+  put($("#main"),
+    h("div", { class: "toolbar", style: "align-items:flex-end" }, h("div", { class: "stack", style: "gap:10px" }, presets, custom),
+      h("div", { class: "actions" }, staffSel, h("button", { class: "btn", onclick: copySummary }, "Copy for WhatsApp"), h("button", { class: "btn primary", onclick: exportSummary }, "Download Excel"))),
+    h("div", { id: "rp" }, h("p", { class: "loading" }, "Counting cases…")));
+  loadSummary();
+}
+let rpReq = 0;
+async function loadSummary() {
+  const r = S.rp; const my = ++rpReq;
+  if (r.from > r.to) return put($("#rp"), h("p", { class: "empty" }, "The start date is after the end date."));
+  try { const rows = await S.api.reportCases(r.from, r.to, role() === "staff" ? S.email : r.staff); if (my !== rpReq) return; S.rpRows = rows; drawSummary(); }
+  catch (e) { if (my === rpReq) put($("#rp"), h("p", { class: "empty", style: "color:var(--danger)" }, "Summary didn’t load: " + errMsg(e))); }
+}
+function countBy(rows, fn) { const o = {}; for (const r of rows) { const k = fn(r); o[k] = (o[k] || 0) + 1; } return o; }
+function rangeLabel() {
+  const { from, to } = S.rp;
+  if (from === to) return fmtDate(from);
+  if (from.slice(8) === "01" && to === addDays(addDays(from.slice(0, 8) + "28", 4).slice(0, 8) + "01", -1)) return MONTHS[+from.slice(5, 7) - 1] + " " + from.slice(0, 4);
+  return fmtShort(from) + " to " + fmtShort(to) + " " + to.slice(0, 4);
+}
+function scopeLabel() { return S.rp.staff ? nameOf(S.rp.staff) : role() === "staff" ? S.me.name : "Whole team"; }
+function orderKeys(obj, preferred) { const extra = Object.keys(obj).filter(k => !preferred.includes(k)); return preferred.filter(k => k in obj).concat(extra); }
+// Pivot: rows x cols with totals, like an Excel pivot table.
+function pivot(rows, rowFn, colFn, colOrder, rowOrder) {
+  const cells = {}, rt = {}, ct = {};
+  for (const r of rows) { const a = rowFn(r), b = colFn(r); (cells[a] = cells[a] || {})[b] = (cells[a][b] || 0) + 1; rt[a] = (rt[a] || 0) + 1; ct[b] = (ct[b] || 0) + 1; }
+  const cols = orderKeys(ct, colOrder);
+  let rk = rowOrder ? orderKeys(rt, rowOrder) : Object.keys(rt).sort((x, y) => rt[y] - rt[x]);
+  rk = rk.filter(k => k !== NOT_SET).concat(rt[NOT_SET] ? [NOT_SET] : []);
+  return { cells, rt, ct, cols, rows: rk, total: rows.length };
+}
+function pivotAoa(title, rowLabel, p) {
+  return [[title], [rowLabel, ...p.cols, "TOTAL"], ...p.rows.map(k => [k, ...p.cols.map(c => p.cells[k][c] || 0), p.rt[k]]), ["TOTAL", ...p.cols.map(c => p.ct[c]), p.total]];
+}
+function pivotTable(rowLabel, p) {
+  if (!p.total) return h("p", { class: "empty" }, "No cases in this range.");
+  const max = Math.max(1, ...p.rows.flatMap(k => p.cols.map(c => p.cells[k][c] || 0)));
+  return h("div", { class: "tblwrap" }, h("table", { class: "mx" },
+    h("thead", {}, h("tr", {}, h("th", {}, rowLabel), p.cols.map(c => h("th", { class: "num" }, c)), h("th", { class: "num" }, "Total"))),
+    h("tbody", {}, p.rows.map(k => h("tr", {}, h("td", { style: "font-weight:600", class: "nowrap", text: k }),
+      p.cols.map(c => { const v = p.cells[k][c] || 0; return h("td", { class: "v" + (v ? "" : " z"), style: v ? "--h:" + Math.round(8 + v / max * 42) + "%" : null, text: v || "·" }); }),
+      h("td", { class: "num tot", text: p.rt[k] })))),
+    h("tfoot", {}, h("tr", {}, h("td", {}, "Total"), p.cols.map(c => h("td", { class: "num", text: p.ct[c] })), h("td", { class: "num", text: p.total })))));
+}
+function bars(obj, order, colorFn) {
+  const keys = orderKeys(obj, order || Object.keys(obj).sort((a, b) => obj[b] - obj[a]));
+  const max = Math.max(1, ...Object.values(obj));
+  if (!keys.length) return h("p", { class: "empty" }, "No cases in this range.");
+  return h("div", { class: "bars" }, keys.map(k => h("div", { class: "bar" }, h("span", { class: "bl", title: k, text: k }),
+    h("span", { class: "bt" }, h("span", { class: "bf", style: "width:" + (obj[k] / max * 100).toFixed(1) + "%;" + (colorFn ? "background:" + colorFn(k) : "") })), h("span", { class: "bn", text: obj[k] }))));
+}
+function summaryData() {
+  const rows = S.rpRows; const ns = v => v || NOT_SET;
+  const st = countBy(rows, r => r.status);
+  const days = []; for (let d = S.rp.from; d <= S.rp.to && days.length < 370; d = addDays(d, 1)) days.push(d);
+  return {
+    rows, st, days,
+    dealers: new Set(rows.map(r => r.dealer_id).filter(Boolean)).size,
+    issueBySource: pivot(rows, r => ns(r.topic), r => r.channel, S.channels, S.topics),
+    issueBySub: pivot(rows, r => ns(r.topic), r => ns(r.sub_issue), S.subs, S.topics),
+    stateBySource: pivot(rows, r => ns(r.state), r => r.channel, S.channels, null),
+    dayBySource: pivot(rows, r => r.case_date, r => r.channel, S.channels, days),
+    staffBySource: pivot(rows, r => nameOf(r.staff_email, r.staff_name), r => r.channel, S.channels, null),
+    statusBySource: pivot(rows, r => r.status, r => r.channel, S.channels, STATUSES)
+  };
+}
+function drawSummary() {
+  const box = $("#rp"); if (!box) return; const D = summaryData(); const rows = D.rows;
+  const pending = (D.st.Open || 0) + (D.st["Follow-up"] || 0);
+  const kpis = h("div", { class: "kpis" },
+    h("div", { class: "kpi" }, h("b", { text: rows.length }), h("span", {}, "Cases")),
+    h("div", { class: "kpi" }, h("b", { text: D.st.Closed || 0 }), h("span", {}, "Closed")),
+    h("div", { class: "kpi" }, h("b", { text: pending }), h("span", {}, "Pending (open or follow-up)")),
+    h("div", { class: "kpi" }, h("b", { text: rows.length ? Math.round((D.st.Closed || 0) / rows.length * 100) + "%" : "–" }), h("span", {}, "Closed rate")),
+    h("div", { class: "kpi" }, h("b", { text: D.dealers }), h("span", {}, "Dealers")));
+  const daysWithCases = D.days.filter(d => D.dayBySource.rt[d]);
+  const maxDay = Math.max(1, ...D.days.map(d => D.dayBySource.rt[d] || 0));
+  const card = (title, ...kids) => h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: title })), kids);
+  put(box,
+    h("p", { class: "muted", style: "margin-bottom:12px" }, rangeLabel() + ", " + scopeLabel().toLowerCase().replace(/^whole team$/, "whole team")),
+    kpis,
+    h("div", { class: "stack" },
+      card("Main issue by source", pivotTable("Main issue", D.issueBySource)),
+      card("Main issue by sub issue", pivotTable("Main issue", D.issueBySub)),
+      h("div", { class: "grid2" }, card("By source", bars(countBy(rows, r => r.channel), S.channels, chColor)), card("By state", bars(countBy(rows, r => r.state || NOT_SET), null, null))),
+      D.days.length > 1 ? card("Cases per day",
+        h("div", { class: "cols", role: "img", "aria-label": "Cases per day" }, D.days.map(d => h("div", { class: "c", title: fmtShort(d) + ": " + (D.dayBySource.rt[d] || 0), style: "height:" + ((D.dayBySource.rt[d] || 0) / maxDay * 100).toFixed(1) + "%" }))),
+        h("div", { class: "colax" }, h("span", { text: fmtShort(D.days[0]) }), h("span", { text: fmtShort(D.days[D.days.length - 1]) })),
+        daysWithCases.length ? h("details", { style: "margin-top:12px" }, h("summary", { class: "small", style: "cursor:pointer;font-weight:600" }, "Daily breakdown by source"),
+          h("div", { style: "margin-top:10px" }, pivotTable("Date", { ...D.dayBySource, rows: daysWithCases }))) : null) : null,
+      role() !== "staff" && !S.rp.staff ? card("By staff", pivotTable("Staff", D.staffBySource)) : null,
+      card("Status by source", pivotTable("Status", D.statusBySource))));
+}
+function summaryText() {
+  const D = summaryData(); const rows = D.rows;
+  const lines = (o, order) => { const ks = orderKeys(o, order || Object.keys(o).sort((a, b) => o[b] - o[a])); return ks.length ? ks.map(k => "- " + k + ": " + o[k]).join("\n") : "- none"; };
+  let t = "*DMT Daily Activity Summary*\n" + rangeLabel() + (scopeLabel() !== "Whole team" ? " (" + scopeLabel() + ")" : "") + "\n\n";
+  t += "Total cases: " + rows.length + "\nClosed: " + (D.st.Closed || 0) + " | Follow-up: " + (D.st["Follow-up"] || 0) + " | Open: " + (D.st.Open || 0) + "\n\n";
+  t += "*By source*\n" + lines(D.issueBySource.ct, S.channels) + "\n\n";
+  t += "*By main issue*\n" + lines(D.issueBySource.rt, null) + "\n\n";
+  t += "*By sub issue*\n" + lines(D.issueBySub.ct, null);
+  if (role() !== "staff" && !S.rp.staff) t += "\n\n*By staff*\n" + lines(D.staffBySource.rt, null);
+  return t;
+}
+async function copySummary() {
+  const t = summaryText();
+  try { await navigator.clipboard.writeText(t); toast("Summary copied"); }
+  catch { const ta = h("textarea", {}); ta.value = t; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Summary copied"); }
+}
+async function exportSummary() {
+  toast("Preparing Excel…");
+  try {
+    await loadXLSX();
+    const D = summaryData(); const rows = D.rows;
+    const aoa = [["DMT Daily Activity Tracker | Summary"], [rangeLabel() + " | " + scopeLabel()], [],
+      ["Total cases", rows.length], ["Closed", D.st.Closed || 0], ["Follow-up", D.st["Follow-up"] || 0], ["Open", D.st.Open || 0], ["Dealers", D.dealers], [],
+      ...pivotAoa("MAIN ISSUE BY SOURCE", "MAIN ISSUE", D.issueBySource), [],
+      ...pivotAoa("MAIN ISSUE BY SUB ISSUE", "MAIN ISSUE", D.issueBySub), [],
+      ...pivotAoa("STATE BY SOURCE", "STATE", D.stateBySource), [],
+      ...pivotAoa("STATUS BY SOURCE", "STATUS", D.statusBySource)];
+    if (role() !== "staff" && !S.rp.staff) aoa.push([], ...pivotAoa("STAFF BY SOURCE", "STAFF", D.staffBySource));
+    const daily = pivotAoa("DAILY BY SOURCE", "DATE", { ...D.dayBySource, rows: D.days.filter(d => D.dayBySource.rt[d]) });
+    for (let i = 2; i < daily.length - 1; i++) daily[i][0] = fmtDmy(daily[i][0]);
+    aoa.push([], ...daily);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet(aoa, [24, 12, 12, 12, 12, 12, 12, 12, 12]), "Summary");
+    XLSX.utils.book_append_sheet(wb, sheet(trackerAoa(rows), TRACKER_COLS.map(c => c[1])), "Tracker");
+    saveBook(wb, "DMT-summary-" + S.rp.from + (S.rp.from !== S.rp.to ? "-to-" + S.rp.to : "") + ".xlsx");
+    toast("Summary downloaded");
+  } catch (e) { toast("Download failed: " + errMsg(e)); }
+}
+
+/* ================= settings (manager) ================= */
+function renderSettings() {
+  if (role() !== "manager") return go("lodge");
+  const rows = S.members.map(m => {
+    const isMe = m.email === S.email;
+    const rs = h("select", { "aria-label": "Role for " + m.name, style: "width:auto", disabled: isMe ? true : null, onchange: e => saveMember({ ...m, role: e.target.value }, m.name + " is now " + ROLES[e.target.value]) },
+      Object.entries(ROLES).map(([k, l]) => h("option", { value: k }, l))); rs.value = m.role;
+    const act = h("input", { type: "checkbox", "aria-label": "Active", checked: m.active ? true : null, disabled: isMe ? true : null,
+      onchange: e => saveMember({ ...m, active: e.target.checked }, m.name + (e.target.checked ? " can sign in again" : " can no longer sign in")) });
+    return h("tr", {}, h("td", { style: "font-weight:600" }, m.name, isMe ? h("span", { class: "muted", style: "font-weight:400" }, " (you)") : null), h("td", { text: m.email }), h("td", {}, rs), h("td", {}, h("label", { style: "display:inline-flex;gap:6px;align-items:center" }, act, m.active ? "Active" : "Off")));
+  });
+  const nm = h("input", { type: "text", placeholder: "Name", "aria-label": "Name" });
+  const em = h("input", { type: "email", placeholder: "Work email (their login)", "aria-label": "Email" });
+  const rl = h("select", { "aria-label": "Role", style: "width:auto" }, Object.entries(ROLES).map(([k, l]) => h("option", { value: k }, l)));
+  const add = () => {
+    const n = nm.value.trim(), e = em.value.trim().toLowerCase();
+    if (!n) return nm.focus();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { em.focus(); return toast("Enter a valid email address"); }
+    if (S.members.some(m => m.email === e)) return toast("That email is already on the list");
+    saveMember({ email: e, name: n, role: rl.value, active: true, sort: S.members.length }, n + " added");
+  };
+  const ta = (id, list, rows) => { const t = h("textarea", { id, rows: String(rows) }); t.value = list.join("\n"); return t; };
+  const tp = ta("s-topics", S.topics, 10), sb = ta("s-subs", S.subs, 10), ch = ta("s-ch", S.channels, 6), stt = ta("s-states", S.states, 10);
+  const listCard = (title, hint, el) => h("section", { class: "card stack", style: "gap:10px" }, h("h3", { text: title }), h("p", { class: "muted small", text: hint }), el);
+  const split = t => uniq(t.value.split("\n").map(s => s.trim()));
+  put($("#main"),
+    h("div", { class: "stack" },
+      h("section", { class: "card" }, h("div", { class: "head" }, h("h3", { text: "Team and sign-in access" }), h("span", { class: "muted small", text: S.members.filter(m => m.active).length + " active" })),
+        h("div", { class: "tblwrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Name"), h("th", {}, "Email (login)"), h("th", {}, "Role"), h("th", {}, "Access"))), h("tbody", {}, rows))),
+        h("div", { class: "actions", style: "margin-top:14px" }, h("div", { style: "flex:1 1 160px" }, nm), h("div", { style: "flex:1 1 220px" }, em), rl, h("button", { class: "btn primary", onclick: add }, "Add person")),
+        h("p", { class: "muted small", style: "margin-top:12px" }, "Only active people on this list can see or lodge cases; the database enforces it. Adding someone here doesn’t create their login. If they don’t have one yet, create it in Supabase under Authentication, then they can use “Forgot or never set a password?” to choose a password.")),
+      h("div", { class: "grid2" },
+        listCard("Main issues", "One per line, in the order staff should see them. Renaming one doesn’t change past cases.", tp),
+        listCard("Sub issues", "One per line.", sb),
+        listCard("Sources", "One per line. Call, WhatsApp, Facebook, Email and Walk-In have their own colours and contact fields.", ch),
+        listCard("States", "One per line.", stt)),
+      h("div", {}, h("button", { class: "btn primary", onclick: async () => {
+        const next = { topics: split(tp), subs: split(sb), channels: split(ch), states: split(stt) };
+        if (!next.channels.length) return toast("Keep at least one source");
+        try { await S.api.saveSettings(next); S.topics = next.topics; S.subs = next.subs; S.channels = next.channels; S.states = next.states; toast("Lists saved"); renderSettings(); }
+        catch (e) { toast("Lists not saved: " + errMsg(e)); }
+      } }, "Save lists"))));
+}
+async function saveMember(m, okMsg) {
+  try { await S.api.saveMember(m); await loadCore(); toast(okMsg); renderSettings(); }
+  catch (e) { toast("Not saved: " + errMsg(e)); renderSettings(); }
+}
+
+document.addEventListener("keydown", e => {
+  if (!S.me || S.tab !== "lodge" || $("#dlg").open) return;
+  if (e.altKey && /^[1-9]$/.test(e.key)) { const c = S.channels[Number(e.key) - 1]; if (c) { e.preventDefault(); setChannel(c); } }
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveDraft(); }
+});
+
+boot();
+</script>
+</body>
+</html>
