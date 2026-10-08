@@ -85,7 +85,7 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{b
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;min-width:0}
 .stack{display:flex;flex-direction:column;gap:16px}
 .row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
-.row3{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:14px}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .lodge{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
 .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
 @media (max-width:900px){.lodge,.grid2{grid-template-columns:minmax(0,1fr)}}
@@ -113,6 +113,7 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true]{b
 .b-open{background:var(--open-soft);color:var(--open)}
 .b-follow-up{background:var(--warn-soft);color:var(--warn)}
 .b-closed{background:var(--ok-soft);color:var(--ok)}
+.b-escalated{background:color-mix(in srgb,var(--danger) 13%,transparent);color:var(--danger)}
 .cno{font-weight:600;white-space:nowrap}
 
 .hist{display:flex;flex-direction:column;max-height:560px;overflow-y:auto}
@@ -257,10 +258,10 @@ const HASH = location.hash || "";
 const AUTH_TYPE = (HASH.match(/[#&]type=([a-z_]+)/) || [])[1] || "";
 const HASH_ERR = decodeURIComponent(((HASH.match(/error_description=([^&]+)/) || [])[1] || "").replace(/\+/g, " "));
 const LIVE = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/i.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
-const DEFAULT_CHANNELS = ["Call", "WhatsApp", "Facebook", "Email", "Walk-In"];
+const DEFAULT_CHANNELS = ["Call", "WhatsApp", "Facebook", "Email", "Walk-In", "Others"];
 const DEFAULT_SUBS = ["STATUS", "REQUEST", "UPDATE", "EKYC", "ERROR"];
 const DEFAULT_STATES = ["JOHOR", "KEDAH", "KELANTAN", "MELAKA", "NEGERI SEMBILAN", "PAHANG", "PERAK", "PERLIS", "PULAU PINANG", "SABAH", "SARAWAK", "SELANGOR", "TERENGGANU", "WILAYAH"];
-const STATUSES = ["Open", "Follow-up", "Closed"];
+const STATUSES = ["Open", "Follow-up", "Escalated", "Closed"];
 const DEFAULT_AUDIENCE = ["Dealer", "AD", "MD"];
 const MEMO_MAX = 10 * 1024 * 1024;
 const ROLES = { staff: "Staff", supervisor: "Supervisor", manager: "Manager" };
@@ -343,7 +344,7 @@ function contactProblem(channel, c) {
 function phoneProblem(p) { p = String(p || "").trim(); if (!p) return ""; const n = normContact("call", p); return /^\d{9,12}$/.test(n) ? "" : "Enter a full phone number, or leave it blank."; }
 
 /* ================= state ================= */
-function blankDraft(ch) { return { channel: ch || null, date: today(), contact: "", dealer: "", dname: "", dphone: "", state: "", topic: "", sub: "", desc: "", caseRef: "", assigned: "", status: "Closed", completed: today(), resolution: "", campaign: "" }; }
+function blankDraft(ch) { return { channel: ch || null, date: today(), contact: "", dealer: "", dname: "", dphone: "", state: "", topic: "", sub: "", desc: "", caseRef: "", assigned: "", status: "Closed", completed: today(), resolution: "", campaign: "", issueRef: "" }; }
 const S = {
   api: null, email: "", me: null, members: [],
   channels: DEFAULT_CHANNELS.slice(), topics: [], subs: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(),
@@ -360,12 +361,12 @@ function canEdit(r) { return role() !== "staff" || r.staff_email === S.email; }
 function caseFields(d) {
   return { case_date: d.date || today(), channel: d.channel, contact: d.contact.trim(), contact_norm: normContact(d.channel, d.contact),
     dealer_id: d.dealer.trim().toUpperCase() || null, dealer_name: d.dname.trim() || null, dealer_phone: d.dphone.trim() || null, state: d.state || null,
-    topic: d.topic || null, sub_issue: d.sub || null, description: d.desc.trim(), case_ref: d.caseRef.trim().toUpperCase() || null,
+    topic: d.topic || null, sub_issue: d.sub || null, description: d.desc.trim(), case_ref: d.caseRef.trim().toUpperCase() || null, issue_ref: d.issueRef.trim().toUpperCase() || null,
     assigned_to: d.assigned.trim() || null, campaign_id: d.campaign || null, status: d.status, completed_on: d.status === "Closed" ? (d.completed || today()) : null, resolution: d.resolution.trim() || null };
 }
 function rowToDraft(r) {
   return { channel: r.channel, date: r.case_date, contact: r.contact || "", dealer: r.dealer_id || "", dname: r.dealer_name || "", dphone: r.dealer_phone || "", state: r.state || "",
-    topic: r.topic || "", sub: r.sub_issue || "", campaign: r.campaign_id || "", desc: r.description || "", caseRef: r.case_ref || "", assigned: r.assigned_to || "", status: r.status, completed: r.completed_on || today(), resolution: r.resolution || "" };
+    topic: r.topic || "", sub: r.sub_issue || "", campaign: r.campaign_id || "", desc: r.description || "", caseRef: r.case_ref || "", issueRef: r.issue_ref || "", assigned: r.assigned_to || "", status: r.status, completed: r.completed_on || today(), resolution: r.resolution || "" };
 }
 
 /* ================= data: Supabase ================= */
@@ -384,7 +385,7 @@ function supaApi() {
     if (f.staff) q = q.eq("staff_email", f.staff);
     const s = (f.q || "").trim();
     if (s) {
-      const parts = ["description", "contact", "dealer_id", "dealer_name", "case_ref", "topic", "assigned_to"].map(c => c + ".ilike." + q2("*" + s + "*"));
+      const parts = ["description", "contact", "dealer_id", "dealer_name", "case_ref", "issue_ref", "topic", "assigned_to"].map(c => c + ".ilike." + q2("*" + s + "*"));
       const digits = s.replace(/\D/g, "");
       if (digits.length >= 4) { const d = digits.startsWith("60") ? digits.slice(2) : digits.replace(/^0/, ""); parts.push("contact_norm.ilike." + q2("*" + d + "*"), "dealer_phone_norm.ilike." + q2("*" + d + "*")); }
       const n = s.replace(/^#/, "");
@@ -420,13 +421,13 @@ function supaApi() {
     async removeMemos(paths) { if (paths.length) await sb.storage.from("crm-memos").remove(paths); },
     async saveMember(m) { const { error } = await sb.from("crm_members").upsert({ email: m.email, name: m.name, role: m.role, active: m.active, sort: m.sort ?? 0 }); if (error) throw error; },
     async listCases(f, off, lim, asc) {
-      const { data, error, count } = await filt(sb.from(CASES).select("*", { count: "exact" }), f).order("case_date", { ascending: !!asc }).order("created_at", { ascending: !!asc }).range(off, off + lim - 1);
+      const { data, error, count } = await filt(sb.from(CASES).select("*", { count: "exact" }), f).order("case_date", { ascending: !!asc }).order("case_no", { ascending: !!asc }).range(off, off + lim - 1);
       if (error) throw error; return { rows: data || [], count: count || 0 };
     },
     async reportCases(from, to, staff) {
       const out = [];
       for (let off = 0; off < 100000; off += 1000) {
-        let q = sb.from(CASES).select("*").gte("case_date", from).lte("case_date", to).order("case_date").order("created_at").range(off, off + 999);
+        let q = sb.from(CASES).select("*").gte("case_date", from).lte("case_date", to).order("case_date").order("case_no").range(off, off + 999);
         if (staff) q = q.eq("staff_email", staff);
         const { data, error } = await q; if (error) throw error;
         out.push(...data); if (data.length < 1000) break;
@@ -499,7 +500,7 @@ function demoApi() {
     const s = (f.q || "").trim().toLowerCase();
     if (s) {
       const digits = s.replace(/\D/g, ""); const dd = digits.replace(/^60/, "").replace(/^0/, "");
-      const hit = [r.description, r.contact, r.dealer_id, r.dealer_name, r.case_ref, r.topic, r.assigned_to].some(x => String(x || "").toLowerCase().includes(s))
+      const hit = [r.description, r.contact, r.dealer_id, r.dealer_name, r.case_ref, r.issue_ref, r.topic, r.assigned_to].some(x => String(x || "").toLowerCase().includes(s))
         || (digits.length >= 4 && (r.contact_norm.includes(dd) || String(r.dealer_phone_norm || "").includes(dd))) || String(r.case_no) === s.replace(/^#/, "");
       if (!hit) return false;
     }
@@ -684,13 +685,25 @@ function caseForm(d, opt) {
   const statusSet = h("div", { class: "status-set", role: "radiogroup", "aria-label": "Status" }, STATUSES.map(s => h("label", {},
     h("input", { type: "radio", name: id("status"), value: s, disabled: ro, checked: d.status === s ? true : null,
       onchange: () => { d.status = s; $("#" + id("w-done")).hidden = s !== "Closed"; if (s === "Closed" && !d.completed) { d.completed = today(); completed.value = d.completed; } } }), s)));
+  // Case date: updates on every keystroke/pick; Date completed follows it unless set by hand.
+  const dateNote = h("p", { class: "small muted", id: id("date-note") });
+  const drawDateNote = () => put(dateNote, d.date && d.date !== today() ? ["Lodging for an earlier date. ", h("button", { class: "linkbtn small", type: "button", onclick: () => setDate(today()) }, "Use today")] : []);
+  const setDate = v => {
+    if (!v || v > today()) return;
+    const was = d.date; d.date = v; if (dateInput.value !== v) dateInput.value = v;
+    if (!d.completedSet && (!d.completed || d.completed === was || d.completed === today())) { d.completed = v; completed.value = v; }
+    drawDateNote();
+  };
+  const dateInput = h("input", { type: "date", id: id("date"), value: d.date, max: today(), readonly: ro, oninput: e => setDate(e.target.value), onchange: e => setDate(e.target.value) });
+  completed.addEventListener("input", () => d.completedSet = true);
+  drawDateNote();
   const contact = inp("contact", "contact", { type: m.type, inputmode: m.phone ? "tel" : null, placeholder: m.ph }, opt.onLookup);
   if (m.phone && opt.onLookup) contact.addEventListener("blur", () => { if (!d.dphone && !contactProblem(d.channel, d.contact)) { d.dphone = d.contact.trim(); const f = $("#" + id("dphone")); if (f) f.value = d.dphone; } });
 
   return [
     h("div", { class: "row2" },
       fieldWrap(pre, "contact", h("span", { id: id("contact-l") }, m.label), contact),
-      fieldWrap(pre, "date", "Date", h("input", { type: "date", id: id("date"), value: d.date, max: today(), readonly: ro, onchange: e => d.date = e.target.value || today() }))),
+      fieldWrap(pre, "date", "Date", dateInput, ro ? null : dateNote)),
     h("hr", { class: "divider" }),
     h("div", { class: "row2" },
       fieldWrap(pre, "dealer", h("span", {}, "Dealer ID ", h("span", { class: "opt" }, "(if any)")), inp("dealer", "dealer", { type: "text", class: "up", placeholder: "e.g. DYSD113597" }, opt.onLookup)),
@@ -703,8 +716,9 @@ function caseForm(d, opt) {
     campaignField(d, pre, ro),
     fieldWrap(pre, "desc", "Description", desc),
     ro ? null : quickTexts(d, pre, desc),
-    h("div", { class: "row2" },
-      fieldWrap(pre, "caseRef", h("span", {}, "Case no. ", h("span", { class: "opt" }, "(from CRM, if any)")), inp("caseRef", "caseRef", { type: "text", class: "up", placeholder: "e.g. CA07102026-6532688" })),
+    h("div", { class: "row3" },
+      fieldWrap(pre, "caseRef", h("span", {}, "Case no. ", h("span", { class: "opt" }, "(CRM)")), inp("caseRef", "caseRef", { type: "text", class: "up", placeholder: "e.g. CA07102026-6532688" })),
+      fieldWrap(pre, "issueRef", h("span", {}, "Issue no. ", h("span", { class: "opt" }, "(if any)")), inp("issueRef", "issueRef", { type: "text", class: "up", placeholder: "e.g. IS05102026-629009" })),
       fieldWrap(pre, "assigned", h("span", {}, "Assigned to ", h("span", { class: "opt" }, "(if escalated)")), inp("assigned", "assigned", { type: "text", list: "dl-assign", placeholder: "Person or team" }))),
     h("div", { class: "row2", style: "align-items:end" }, h("div", { class: "field" }, h("span", { class: "lbl" }, "Status"), statusSet), doneWrap),
     h("div", { class: "field" }, h("label", { for: id("res") }, "Remarks ", h("span", { class: "opt" }, "(optional)")), res)
@@ -747,7 +761,7 @@ function campaignField(d, pre, ro) {
   s.value = d.campaign || "";
   return fieldWrap(pre, "campaign", h("span", {}, "Related campaign ", h("span", { class: "opt" }, "(if the dealer asked about one)")), s);
 }
-function fieldWrap(pre, key, label, el) { return h("div", { class: "field", id: pre + "-w-" + key }, h("label", { for: el.id || null }, label), el, h("span", { class: "err", id: pre + "-e-" + key })); }
+function fieldWrap(pre, key, label, el, extra) { return h("div", { class: "field", id: pre + "-w-" + key }, h("label", { for: el.id || null }, label), el, extra || null, h("span", { class: "err", id: pre + "-e-" + key })); }
 function clearErr(pre, k) { const e = $("#" + pre + "-e-" + k); if (e) e.textContent = ""; $("#" + pre + "-w-" + k)?.querySelector("[aria-invalid]")?.removeAttribute("aria-invalid"); }
 function validate(d, pre) {
   const errs = {};
@@ -791,7 +805,9 @@ async function saveDraft() {
   try {
     const row = await S.api.saveCase(null, caseFields(d));
     toast("Case " + caseNo(row.case_no) + " saved");
+    const keepDate = d.date;                                     // keep a back-dated day for the next case
     S.draft = blankDraft(d.channel); S.hist = { key: "", rows: [] };
+    if (keepDate && keepDate !== today()) { S.draft.date = keepDate; S.draft.completed = keepDate; }
     renderLodge(); focusContact();
   } catch (e) { toast("Case not saved: " + errMsg(e)); btn.disabled = false; btn.textContent = "Save case"; }
 }
@@ -846,12 +862,12 @@ function renderMine() {
 /* Columns follow the Excel tracker: NO, DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE, REMARKS */
 function trackerTable(rows, showStaff) {
   return h("div", { class: "tblwrap" }, h("table", { class: "tracker" },
-    h("thead", {}, h("tr", {}, ["No", "Date", "Dealer ID", "Fon no", "Dealer name", "State", "Main issue", "Sub issue", "Description", "Case", "Assigned to", "Status", "Completed", "Source", "Contact"].map(t => h("th", {}, t)), showStaff ? h("th", {}, "Logged by") : null)),
+    h("thead", {}, h("tr", {}, ["No", "Date", "Dealer ID", "Fon no", "Dealer name", "State", "Main issue", "Sub issue", "Description", "Case", "Issue", "Assigned to", "Status", "Completed", "Source", "Contact"].map(t => h("th", {}, t)), showStaff ? h("th", {}, "Logged by") : null)),
     h("tbody", {}, rows.map(r => h("tr", { class: "click", tabindex: "0", onclick: () => openCase(r), onkeydown: e => { if (e.key === "Enter") openCase(r); } },
       h("td", { class: "cno", text: caseNo(r.case_no) }), h("td", { class: "nowrap", text: fmtDmy(r.case_date) }),
       h("td", { class: "nowrap", text: r.dealer_id || "" }), h("td", { class: "nowrap", text: r.dealer_phone || "" }), h("td", { class: "nowrap", text: r.dealer_name || "" }),
       h("td", { class: "nowrap", text: r.state || "" }), h("td", { class: "nowrap", text: r.topic || "" }), h("td", { class: "nowrap", text: r.sub_issue || "" }),
-      h("td", { class: "clip", title: r.description, text: r.description }), h("td", { class: "nowrap", text: r.case_ref || "" }), h("td", { class: "nowrap", text: r.assigned_to || "" }),
+      h("td", { class: "clip", title: r.description, text: r.description }), h("td", { class: "nowrap", text: r.case_ref || "" }), h("td", { class: "nowrap", text: r.issue_ref || "" }), h("td", { class: "nowrap", text: r.assigned_to || "" }),
       h("td", {}, badge(r.status)), h("td", { class: "nowrap", text: fmtDmy(r.completed_on) }), h("td", {}, chip(r.channel)),
       h("td", { class: "nowrap", text: r.contact }), showStaff ? h("td", { class: "nowrap", text: nameOf(r.staff_email, r.staff_name) }) : null)))));
 }
@@ -901,7 +917,7 @@ function renderCases() {
   const fld = (id, label, el) => h("div", { class: "field" }, h("label", { for: id }, label), el);
   put($("#main"),
     h("div", { class: "filters" },
-      h("div", { class: "field q" }, h("label", { for: "cf-q" }, "Search"), h("input", { type: "search", id: "cf-q", placeholder: "Dealer ID, name, phone, email, case no. or words", value: f.q, oninput: e => set("q", e.target.value) })),
+      h("div", { class: "field q" }, h("label", { for: "cf-q" }, "Search"), h("input", { type: "search", id: "cf-q", placeholder: "Dealer ID, name, phone, email, case/issue no. or words", value: f.q, oninput: e => set("q", e.target.value) })),
       fld("cf-ch", "Source", sel("cf-ch", "channel", [h("option", { value: "" }, "All"), S.channels.map(c => h("option", { value: c }, c))])),
       fld("cf-tp", "Main issue", sel("cf-tp", "topic", listOptions(S.topics, "Not set"))),
       fld("cf-sb", "Sub issue", sel("cf-sb", "sub", listOptions(S.subs, "Not set"))),
@@ -939,10 +955,10 @@ function loadXLSX() {
   if (window.XLSX) return Promise.resolve();
   return xlsxReady || (xlsxReady = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = res; s.onerror = () => { xlsxReady = null; rej(new Error("Excel library didn’t load")); }; document.head.append(s); }));
 }
-const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["CAMPAIGN", 30], ["LOGGED BY", 16]];
+const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ISSUE", 20], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["CAMPAIGN", 30], ["LOGGED BY", 16]];
 function trackerAoa(rows) {
   return [TRACKER_COLS.map(c => c[0]), ...rows.map((r, i) => [i + 1, fmtDmy(r.case_date), r.dealer_id || "", r.dealer_phone || "", r.dealer_name || "", r.state || "", r.topic || "", r.sub_issue || "",
-    r.description || "", r.case_ref || "", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", r.campaign_id ? campaignName(r.campaign_id) : "", nameOf(r.staff_email, r.staff_name)])];
+    r.description || "", r.case_ref || "NONE", r.issue_ref || "NONE", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", r.campaign_id ? campaignName(r.campaign_id) : "", nameOf(r.staff_email, r.staff_name)])];
 }
 function sheet(aoa, widths) { const ws = XLSX.utils.aoa_to_sheet(aoa); if (widths) ws["!cols"] = widths.map(w => ({ wch: w })); return ws; }
 function saveBook(wb, name) { XLSX.writeFile(wb, name); }
@@ -1162,7 +1178,7 @@ function drawSummary() {
     h("div", { class: "stack" },
       card(nDays > 1 ? "Cases per day" : "Cases by hour", null, nDays > 1 ? stackedDays(D) : hourChart(rows)),
       h("div", { class: "grid2" },
-        card("Pending cases", h("span", { class: "muted small", text: pendingN ? pendingN + " open or in follow-up" : "" }), pendingList),
+        card("Pending cases", h("span", { class: "muted small", text: pendingN ? pendingN + " open, follow-up or escalated" : "" }), pendingList),
         card("Dealers with most cases", null, dealerTable)),
       h("div", { class: "grid2" }, card("By source", null, bars(countBy(rows, r => r.channel), S.channels, chColor)), card("By state", null, bars(countBy(rows, r => r.state || NOT_SET), null, null))),
       card("Main issue by source", null, pivotTable("Main issue", D.issueBySource)),
@@ -1183,7 +1199,7 @@ function summaryText() {
   const D = summaryData(); const rows = D.rows;
   const lines = (o, order) => { const ks = orderKeys(o, order || Object.keys(o).sort((a, b) => o[b] - o[a])); return ks.length ? ks.map(k => "- " + k + ": " + o[k]).join("\n") : "- none"; };
   let t = "*DMT Daily Activity Summary*\n" + D.R.label + (scopeLabel() !== "Whole team" ? " (" + scopeLabel() + ")" : "") + "\n\n";
-  t += "Total cases: " + rows.length + " (" + D.R.vs + ": " + D.prev.length + ")\nClosed: " + (D.st.Closed || 0) + " | Follow-up: " + (D.st["Follow-up"] || 0) + " | Open: " + (D.st.Open || 0) + "\n\n";
+  t += "Total cases: " + rows.length + " (" + D.R.vs + ": " + D.prev.length + ")\nClosed: " + (D.st.Closed || 0) + " | Escalated: " + (D.st.Escalated || 0) + " | Follow-up: " + (D.st["Follow-up"] || 0) + " | Open: " + (D.st.Open || 0) + "\n\n";
   t += "*By source*\n" + lines(D.issueBySource.ct, S.channels) + "\n\n";
   t += "*By main issue*\n" + lines(D.issueBySource.rt, null) + "\n\n";
   t += "*By sub issue*\n" + lines(D.issueBySub.ct, null);
@@ -1205,7 +1221,7 @@ async function exportSummary() {
     const D = summaryData(); const rows = D.rows;
     const aoa = [["DMT Daily Activity Tracker | Dashboard"], [D.R.label + " | " + scopeLabel()], [],
       ["", "This period", D.R.vs.replace(/^vs /, "").replace(/^./, x => x.toUpperCase())],
-      ["Total cases", rows.length, D.prev.length], ["Closed", D.st.Closed || 0, D.pst.Closed || 0], ["Follow-up", D.st["Follow-up"] || 0, D.pst["Follow-up"] || 0], ["Open", D.st.Open || 0, D.pst.Open || 0], ["Dealers", D.dealers, ""], [],
+      ["Total cases", rows.length, D.prev.length], ["Closed", D.st.Closed || 0, D.pst.Closed || 0], ["Escalated", D.st.Escalated || 0, D.pst.Escalated || 0], ["Follow-up", D.st["Follow-up"] || 0, D.pst["Follow-up"] || 0], ["Open", D.st.Open || 0, D.pst.Open || 0], ["Dealers", D.dealers, ""], [],
       ...pivotAoa("MAIN ISSUE BY SOURCE", "MAIN ISSUE", D.issueBySource), [],
       ...pivotAoa("MAIN ISSUE BY SUB ISSUE", "MAIN ISSUE", D.issueBySub), [],
       ...pivotAoa("STATE BY SOURCE", "STATE", D.stateBySource), [],
@@ -1416,9 +1432,11 @@ function openChangePassword() {
 
 /* ================= import from Excel (manager) ================= */
 const IMPORT_HEADERS = { "DATE": "date", "DEALER ID": "dealer", "FON NO": "phone", "PHONE NO": "phone", "DEALERS NAME": "name", "DEALER NAME": "name", "STATE": "state",
-  "MAIN ISSUE": "topic", "SUB ISSUE": "sub", "DESCRIPTION": "desc", "CASE": "caseRef", "CASE NO": "caseRef", "ASSIGNED TO": "assigned", "STATUS": "status",
+  "MAIN ISSUE": "topic", "SUB ISSUE": "sub", "DESCRIPTION": "desc", "CASE": "caseRef", "CASE NO": "caseRef", "ISSUE": "issueRef", "ISSUE NO": "issueRef", "DATE COMPLETE": "completed", "ASSIGNED TO": "assigned", "STATUS": "status",
   "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact" };
 const EMPTY_CELL = /^(select|none|nil|n\/?a|-+|done)$/i;
+// Short spellings used in the Excel tracker, mapped to the names in the app's lists.
+const TOPIC_ALIASES = { INCENTVE: "INCENTIVE", DEALERSHP: "DEALERSHIP", ERECHRGE: "E-RECHARGE", ERECHARGE: "E-RECHARGE", HIRARCHY: "HIERARCHY" };
 function cellText(v) { const t = String(v ?? "").replace(/\s+/g, " ").trim(); return EMPTY_CELL.test(t) ? "" : t; }
 function cellDate(v) {
   if (typeof v === "number" && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()); }
@@ -1429,7 +1447,7 @@ function cellDate(v) {
 }
 function mapSource(v) {
   const k = String(v || "").toLowerCase().replace(/[^a-z]/g, "");
-  const known = { email: "Email", emel: "Email", call: "Call", calls: "Call", phone: "Call", inbound: "Call", whatsapp: "WhatsApp", wa: "WhatsApp", whatapps: "WhatsApp", whatsap: "WhatsApp", facebook: "Facebook", fb: "Facebook", walkin: "Walk-In" };
+  const known = { email: "Email", emel: "Email", call: "Call", calls: "Call", phone: "Call", inbound: "Call", whatsapp: "WhatsApp", wa: "WhatsApp", whatapps: "WhatsApp", whatsap: "WhatsApp", facebook: "Facebook", fb: "Facebook", walkin: "Walk-In", others: "Others", other: "Others" };
   if (known[k]) return known[k];
   const hit = S.channels.find(c => c.toLowerCase().replace(/[^a-z]/g, "") === k);
   return hit || (v ? String(v).trim() : NOT_SET);
@@ -1437,7 +1455,8 @@ function mapSource(v) {
 function mapStatus(v, completed) {
   const k = String(v || "").toLowerCase().replace(/[^a-z]/g, "");
   if (/^(closed|close|done|resolved|completed|solved)$/.test(k)) return "Closed";
-  if (/^(followup|pending|inprogress|escalated|kiv)$/.test(k)) return "Follow-up";
+  if (/^(escalated|escalate|escalation)$/.test(k)) return "Escalated";
+  if (/^(followup|pending|inprogress|kiv)$/.test(k)) return "Follow-up";
   if (/^(open|new)$/.test(k)) return "Open";
   return completed ? "Closed" : "Open";
 }
@@ -1455,8 +1474,8 @@ function parseSheet(ws) {
   const out = [], skipped = { noDate: 0 };
   for (let i = hd.row + 1; i < aoa.length; i++) {
     const row = aoa[i]; const g = k => k in hd.map ? row[hd.map[k]] : "";
-    const x = { dealer: cellText(g("dealer")).toUpperCase(), phone: cellText(g("phone")), name: cellText(g("name")), state: cellText(g("state")).toUpperCase(), topic: cellText(g("topic")).toUpperCase(),
-      sub: cellText(g("sub")).toUpperCase(), desc: cellText(g("desc")), caseRef: cellText(g("caseRef")).toUpperCase(), assigned: cellText(g("assigned")), remarks: cellText(g("remarks")), contact: cellText(g("contact")) };
+    const x = { dealer: cellText(g("dealer")).toUpperCase(), phone: cellText(g("phone")), name: cellText(g("name")), state: cellText(g("state")).toUpperCase(), topic: (t => TOPIC_ALIASES[t] || t)(cellText(g("topic")).toUpperCase()),
+      sub: cellText(g("sub")).toUpperCase(), desc: cellText(g("desc")), caseRef: cellText(g("caseRef")).toUpperCase(), issueRef: cellText(g("issueRef")).toUpperCase(), assigned: cellText(g("assigned")), remarks: cellText(g("remarks")), contact: cellText(g("contact")) };
     if (!x.desc && !x.dealer && !x.caseRef && !x.phone) continue;              // empty template row
     const date = cellDate(g("date")); if (!date) { skipped.noDate++; continue; }
     const completed = cellDate(g("completed"));
@@ -1467,7 +1486,7 @@ function parseSheet(ws) {
     const status = mapStatus(cellText(g("status")), completed);
     out.push({ case_date: date, channel, contact, contact_norm: normContact(channel, contact), dealer_id: x.dealer || null, dealer_name: x.name || null, dealer_phone: x.phone || null,
       state: x.state || null, topic: x.topic || null, sub_issue: x.sub || null, description: x.desc || [x.topic, x.sub].filter(Boolean).join(" ") || "Imported case",
-      case_ref: x.caseRef || null, assigned_to: x.assigned || null, status, completed_on: status === "Closed" ? (completed || date) : null, resolution: resolution || null });
+      case_ref: x.caseRef || null, issue_ref: x.issueRef || null, assigned_to: x.assigned || null, status, completed_on: status === "Closed" ? (completed || date) : null, resolution: resolution || null });
   }
   return { rows: out, skipped };
 }
@@ -1477,7 +1496,7 @@ function openImport() {
     h("p", {}, "Upload your DMT tracker (.xlsx). The app finds the header row with DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE and REMARKS, on every sheet."),
     h("ul", { class: "small muted", style: "margin:0;padding-left:18px" },
       h("li", {}, "Empty template rows (SELECT / NONE / DONE) are ignored."),
-      h("li", {}, "Rows already in the tracker (same case no., or same date, dealer and description) are skipped, so importing the same file twice is safe."),
+      h("li", {}, "Rows already in the tracker (same date, dealer, description, case no. and status) are skipped, so importing the same file twice is safe."),
       h("li", {}, "Emails in REMARKS become the sender contact. Imported cases show you as “Logged by”.")),
     msg ? h("p", { class: "small", style: "color:var(--danger)" }, msg) : null,
     h("input", { type: "file", accept: ".xlsx,.xls,.xlsm,.csv", onchange: e => { const f = e.target.files[0]; if (f) analyse(f); } }));
@@ -1490,7 +1509,7 @@ function openImport() {
       if (!sheets.length) return step1("No tracker columns were found in " + file.name + ". Check that the header row includes DEALER ID and DESCRIPTION.");
       const all = sheets.flatMap(s => s.rows); const dates = all.map(r => r.case_date).sort();
       const existing = dates.length ? await S.api.reportCases(dates[0], dates[dates.length - 1], "") : [];
-      const keyOf = r => r.case_date + "|" + (r.dealer_id || "") + "|" + String(r.description || "").trim().toLowerCase();
+      const keyOf = r => r.case_date + "|" + (r.dealer_id || "") + "|" + String(r.description || "").replace(/\s+/g, " ").trim().toLowerCase() + "|" + (r.case_ref || "") + "|" + r.status;
       const refs = new Set(existing.map(r => r.case_ref).filter(Boolean)), keys = new Set(existing.map(keyOf));
       preview(file, sheets, refs, keys, keyOf);
     } catch (e) { step1("Couldn’t read that file: " + errMsg(e)); }
@@ -1498,7 +1517,7 @@ function openImport() {
   const preview = (file, sheets, refs, keys, keyOf) => {
     const compute = () => {
       const seen = new Set(); const fresh = []; let dup = 0;
-      for (const s of sheets) if (s.use) for (const r of s.rows) { const k = keyOf(r); if ((r.case_ref && refs.has(r.case_ref)) || keys.has(k) || seen.has(k)) { dup++; continue; } seen.add(k); fresh.push(r); }
+      for (const s of sheets) if (s.use) for (const r of s.rows) { const k = keyOf(r); if (keys.has(k) || seen.has(k)) { dup++; continue; } seen.add(k); fresh.push(r); }
       return { fresh, dup, noDate: sheets.filter(s => s.use).reduce((a, s) => a + s.skipped.noDate, 0) };
     };
     const draw = () => {
