@@ -716,7 +716,7 @@ function caseForm(d, opt) {
       fieldWrap(pre, "dealer", h("span", {}, "Dealer ID ", h("span", { class: "opt" }, "(if any)")), inp("dealer", "dealer", { type: "text", class: "up", placeholder: "e.g. DYSD113597" }, opt.onLookup)),
       fieldWrap(pre, "dname", "Dealer name", inp("dname", "dname", { type: "text", class: "up", placeholder: "Name or company" }))),
     h("div", { class: "row2" },
-      fieldWrap(pre, "dphone", h("span", {}, "Fon no ", h("span", { class: "opt" }, "(dealer’s phone)")), inp("dphone", "dphone", { type: "tel", inputmode: "tel", placeholder: "e.g. 601113341344" })),
+      fieldWrap(pre, "dphone", h("span", {}, "Contact number ", h("span", { class: "opt" }, "(dealer’s phone)")), inp("dphone", "dphone", { type: "tel", inputmode: "tel", placeholder: "e.g. 601113341344" })),
       fieldWrap(pre, "state", "State", sel("state", S.states, "state", "Select"))),
     h("hr", { class: "divider" }),
     h("div", { class: "row2" }, fieldWrap(pre, "topic", "Main issue", topicEl), fieldWrap(pre, "sub", "Sub issue", sel("sub", S.subs, "sub", "Select"))),
@@ -868,15 +868,19 @@ function renderMine() {
 
 /* Columns follow the Excel tracker: NO, DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE, REMARKS */
 function trackerTable(rows, showStaff) {
+  // Logged by and Source sit next to the date so they are visible without scrolling sideways.
+  const heads = ["No", "Date", showStaff ? "Logged by" : null, "Source", "Dealer ID", "Contact number", "Dealer name", "State", "Main issue", "Sub issue", "Description", "Case", "Issue", "Assigned to", "Status", "Completed", "Sender contact"].filter(Boolean);
   return h("div", { class: "tblwrap" }, h("table", { class: "tracker" },
-    h("thead", {}, h("tr", {}, ["No", "Date", "Dealer ID", "Fon no", "Dealer name", "State", "Main issue", "Sub issue", "Description", "Case", "Issue", "Assigned to", "Status", "Completed", "Source", "Contact"].map(t => h("th", {}, t)), showStaff ? h("th", {}, "Logged by") : null)),
+    h("thead", {}, h("tr", {}, heads.map(t => h("th", {}, t)))),
     h("tbody", {}, rows.map(r => h("tr", { class: "click", tabindex: "0", onclick: () => openCase(r), onkeydown: e => { if (e.key === "Enter") openCase(r); } },
       h("td", { class: "cno", text: caseNo(r.case_no) }), h("td", { class: "nowrap", text: fmtDmy(r.case_date) }),
+      showStaff ? h("td", { class: "nowrap", style: "font-weight:600", text: nameOf(r.staff_email, r.staff_name) }) : null,
+      h("td", {}, chip(r.channel)),
       h("td", { class: "nowrap", text: r.dealer_id || "" }), h("td", { class: "nowrap", text: r.dealer_phone || "" }), h("td", { class: "nowrap", text: r.dealer_name || "" }),
       h("td", { class: "nowrap", text: r.state || "" }), h("td", { class: "nowrap", text: r.topic || "" }), h("td", { class: "nowrap", text: r.sub_issue || "" }),
       h("td", { class: "clip", title: r.description, text: r.description }), h("td", { class: "nowrap", text: r.case_ref || "" }), h("td", { class: "nowrap", text: r.issue_ref || "" }), h("td", { class: "nowrap", text: r.assigned_to || "" }),
-      h("td", {}, badge(r.status)), h("td", { class: "nowrap", text: fmtDmy(r.completed_on) }), h("td", {}, chip(r.channel)),
-      h("td", { class: "nowrap", text: r.contact }), showStaff ? h("td", { class: "nowrap", text: nameOf(r.staff_email, r.staff_name) }) : null)))));
+      h("td", {}, badge(r.status)), h("td", { class: "nowrap", text: fmtDmy(r.completed_on) }),
+      h("td", { class: "nowrap", text: r.contact }))))));
 }
 
 /* ================= case dialog ================= */
@@ -962,7 +966,7 @@ function loadXLSX() {
   if (window.XLSX) return Promise.resolve();
   return xlsxReady || (xlsxReady = new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"; s.onload = res; s.onerror = () => { xlsxReady = null; rej(new Error("Excel library didn’t load")); }; document.head.append(s); }));
 }
-const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["FON NO", 15], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ISSUE", 20], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["CONTACT", 28], ["REMARKS", 30], ["CAMPAIGN", 30], ["LOGGED BY", 16]];
+const TRACKER_COLS = [["NO", 6], ["DATE", 10], ["DEALER ID", 14], ["CONTACT NUMBER", 16], ["DEALERS NAME", 26], ["STATE", 14], ["MAIN ISSUE", 14], ["SUB ISSUE", 12], ["DESCRIPTION", 50], ["CASE", 22], ["ISSUE", 20], ["ASSIGNED TO", 16], ["STATUS", 11], ["DATE COMPLETED", 15], ["SOURCE", 10], ["SENDER CONTACT", 28], ["REMARKS", 30], ["CAMPAIGN", 30], ["LOGGED BY", 16]];
 function trackerAoa(rows) {
   return [TRACKER_COLS.map(c => c[0]), ...rows.map((r, i) => [i + 1, fmtDmy(r.case_date), r.dealer_id || "", r.dealer_phone || "", r.dealer_name || "", r.state || "", r.topic || "", r.sub_issue || "",
     r.description || "", r.case_ref || "NONE", r.issue_ref || "NONE", r.assigned_to || "NONE", String(r.status || "").toUpperCase(), fmtDmy(r.completed_on), String(r.channel || "").toUpperCase(), r.contact || "", r.resolution || "", r.campaign_id ? campaignName(r.campaign_id) : "", nameOf(r.staff_email, r.staff_name)])];
@@ -1454,9 +1458,9 @@ function openChangePassword() {
 }
 
 /* ================= import from Excel (manager) ================= */
-const IMPORT_HEADERS = { "DATE": "date", "DEALER ID": "dealer", "FON NO": "phone", "PHONE NO": "phone", "DEALERS NAME": "name", "DEALER NAME": "name", "STATE": "state",
+const IMPORT_HEADERS = { "DATE": "date", "DEALER ID": "dealer", "FON NO": "phone", "PHONE NO": "phone", "CONTACT NUMBER": "phone", "CONTACT NO": "phone", "DEALERS NAME": "name", "DEALER NAME": "name", "STATE": "state",
   "MAIN ISSUE": "topic", "SUB ISSUE": "sub", "DESCRIPTION": "desc", "CASE": "caseRef", "CASE NO": "caseRef", "ISSUE": "issueRef", "ISSUE NO": "issueRef", "DATE COMPLETE": "completed", "ASSIGNED TO": "assigned", "STATUS": "status",
-  "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact" };
+  "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact", "SENDER CONTACT": "contact" };
 const EMPTY_CELL = /^(select|none|nil|n\/?a|-+|done)$/i;
 // Short spellings used in the Excel tracker, mapped to the names in the app's lists.
 const TOPIC_ALIASES = { INCENTVE: "INCENTIVE", DEALERSHP: "DEALERSHIP", ERECHRGE: "E-RECHARGE", ERECHARGE: "E-RECHARGE", HIRARCHY: "HIERARCHY" };
@@ -1516,7 +1520,7 @@ function parseSheet(ws) {
 function openImport() {
   const dlg = $("#dlg"); const body = h("div", { class: "stack", style: "gap:14px" });
   const step1 = (msg) => put(body,
-    h("p", {}, "Upload your DMT tracker (.xlsx). The app finds the header row with DATE, DEALER ID, FON NO, DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE and REMARKS, on every sheet."),
+    h("p", {}, "Upload your DMT tracker (.xlsx). The app finds the header row with DATE, DEALER ID, FON NO (or CONTACT NUMBER), DEALERS NAME, STATE, MAIN ISSUE, SUB ISSUE, DESCRIPTION, CASE, ASSIGNED TO, STATUS, DATE COMPLETED, SOURCE and REMARKS, on every sheet."),
     h("ul", { class: "small muted", style: "margin:0;padding-left:18px" },
       h("li", {}, "Empty template rows (SELECT / NONE / DONE) are ignored."),
       h("li", {}, "Rows already in the tracker (same date, dealer, description, case no. and status) are skipped, so importing the same file twice is safe."),
@@ -1570,7 +1574,7 @@ function openImport() {
         h("div", { class: "imp-sum" }, kpi(c.fresh.length, "New cases to import"), kpi(c.dup, "Already in tracker, skipped"), kpi(c.noDate, "Skipped, no valid date"),
           kpi(ds.length ? (ds[0] === ds[ds.length - 1] ? fmtDmy(ds[0]) : fmtDmy(ds[0]) + " to " + fmtDmy(ds[ds.length - 1])) : "–", "Date range")),
         c.fresh.length ? h("div", { class: "tblwrap" }, h("table", { class: "tracker" },
-          h("thead", {}, h("tr", {}, ["Date", "Dealer ID", "Dealer name", "Main issue", "Sub issue", "Description", "Status", "Source", "Contact"].map(t => h("th", {}, t)))),
+          h("thead", {}, h("tr", {}, ["Date", "Dealer ID", "Dealer name", "Main issue", "Sub issue", "Description", "Status", "Source", "Sender contact"].map(t => h("th", {}, t)))),
           h("tbody", {}, c.fresh.slice(0, 8).map(r => h("tr", {}, h("td", { class: "nowrap", text: fmtDmy(r.case_date) }), h("td", { class: "nowrap", text: r.dealer_id || "" }), h("td", { class: "nowrap", text: r.dealer_name || "" }),
             h("td", { text: r.topic || "" }), h("td", { text: r.sub_issue || "" }), h("td", { class: "clip", style: "max-width:220px", text: r.description }), h("td", {}, badge(r.status)), h("td", {}, chip(r.channel)), h("td", { class: "nowrap", text: r.contact })))))) : null,
         c.fresh.length > 8 ? h("p", { class: "small muted" }, "Showing the first 8 of " + c.fresh.length + ".") : null,
