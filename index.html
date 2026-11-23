@@ -12,8 +12,8 @@
 /* Settings. The publishable key is meant to be public; database rules (schema.sql) protect the data. */
 window.CRM_CONFIG = {
   appName: "DMT Daily Activity Tracker",
-  supabaseUrl: "https://jrfiyliesitsgnehxqtv.supabase.co",
-  supabaseAnonKey: "sb_publishable_-AOpf0GlT5MeQh5-NMZc9g_CD2xu9Ch",
+  supabaseUrl: "https://kqspaqsrykqydbsolcop.supabase.co",
+  supabaseAnonKey: "sb_publishable_6g7q0LGA2N60PbE3XFEaTg_wHcYwGvq",
   microsoftSignIn: false
 };
 </script>
@@ -351,7 +351,7 @@ const S = {
   channels: DEFAULT_CHANNELS.slice(), topics: [], subs: DEFAULT_SUBS.slice(), states: DEFAULT_STATES.slice(),
   tab: null, previewRole: "",
   draft: blankDraft(null), hist: { key: "", rows: [], loading: false, err: "" }, mine: [],
-  cf: { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "", from: addDays(today(), -29), to: today() },
+  cf: { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "", sort: "date_desc", from: addDays(today(), -29), to: today() },
   cases: { rows: [], count: 0 },
   rp: { mode: "day", day: today(), month: today().slice(0, 7), from: addDays(today(), -6), to: today(), staff: "", channel: "", topic: "", state: "" }, rpRows: [], rpPrev: [], cpFocus: null,
   audience: DEFAULT_AUDIENCE.slice(), campaigns: [], cpFilter: "current", cpQ: "", cpOpen: new Set()
@@ -408,7 +408,9 @@ function supaApi() {
     async saveSettings(s) { const { error } = await sb.from("crm_settings").update({ topics: s.topics, sub_issues: s.subs, channels: s.channels, states: s.states, campaign_audience: s.audience, templates: s.templates, updated_at: new Date().toISOString() }).eq("id", 1); if (error) throw error; },
     async adminLogins() { const { data, error } = await sb.rpc("crm_admin_logins"); if (error) throw error; return data || []; },
     async adminSetPassword(email, pw) { const { data, error } = await sb.rpc("crm_admin_set_password", { target_email: email, new_password: pw }); if (error) throw error; return data; },
-    async insertCases(rows) { for (let i = 0; i < rows.length; i += 200) { const { error } = await sb.from(CASES).insert(rows.slice(i, i + 200)); if (error) throw error; } },
+    async insertCases(rows) {
+      if (rows.some(r => r.staff_email)) { for (let i = 0; i < rows.length; i += 500) { const { error } = await sb.rpc("crm_import_cases", { rows: rows.slice(i, i + 500) }); if (error) throw error; } return; }
+      for (let i = 0; i < rows.length; i += 200) { const { error } = await sb.from(CASES).insert(rows.slice(i, i + 200)); if (error) throw error; } },
     async campaigns() { const { data, error } = await sb.from("crm_campaigns").select("*").order("end_date", { ascending: false }); if (error) throw error; return data || []; },
     async saveCampaign(id, row) {
       const res = id ? await sb.from("crm_campaigns").update(row).eq("id", id).select().single() : await sb.from("crm_campaigns").insert(row).select().single();
@@ -424,7 +426,12 @@ function supaApi() {
     async removeMemos(paths) { if (paths.length) await sb.storage.from("crm-memos").remove(paths); },
     async saveMember(m) { const { error } = await sb.from("crm_members").upsert({ email: m.email, name: m.name, role: m.role, active: m.active, sort: m.sort ?? 0 }); if (error) throw error; },
     async listCases(f, off, lim, asc) {
-      const { data, error, count } = await filt(sb.from(CASES).select("*", { count: "exact" }), f).order("case_date", { ascending: !!asc }).order("case_no", { ascending: !!asc }).range(off, off + lim - 1);
+      let q = filt(sb.from(CASES).select("*", { count: "exact" }), f);
+      const SORTS = { name_az: ["dealer_name", true], name_za: ["dealer_name", false], topic_az: ["topic", true], state_az: ["state", true], staff_az: ["staff_name", true] };
+      const by = asc === undefined && f.sort && SORTS[f.sort];
+      if (by) q = q.order(by[0], { ascending: by[1], nullsFirst: false });
+      const dateAsc = asc === undefined ? f.sort === "date_asc" : !!asc;
+      const { data, error, count } = await q.order("case_date", { ascending: dateAsc }).order("case_no", { ascending: dateAsc }).range(off, off + lim - 1);
       if (error) throw error; return { rows: data || [], count: count || 0 };
     },
     async reportCases(from, to, staff) {
@@ -936,7 +943,8 @@ function renderCases() {
       fld("cf-st", "Status", sel("cf-st", "status", [h("option", { value: "" }, "All"), STATUSES.map(s => h("option", { value: s }, s))])),
       fld("cf-sf", "Logged by", sel("cf-sf", "staff", staffOptions("Anyone"))),
       fld("cf-from", "From", h("input", { type: "date", id: "cf-from", value: f.from, onchange: e => set("from", e.target.value) })),
-      fld("cf-to", "To", h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) }))),
+      fld("cf-to", "To", h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) })),
+      fld("cf-sort", "Sort by", sel("cf-sort", "sort", [["date_desc", "Date: newest first"], ["date_asc", "Date: oldest first"], ["name_az", "Dealer name: A to Z"], ["name_za", "Dealer name: Z to A"], ["topic_az", "Main issue: A to Z"], ["state_az", "State: A to Z"], ["staff_az", "Logged by: A to Z"]].map(([v, l]) => h("option", { value: v }, l))))),
     h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("div", { class: "actions" }, role() === "manager" ? h("button", { class: "btn sm", onclick: openImport }, "Import Excel") : null, h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel"))),
     h("div", { class: "card", id: "cres", style: "padding:12px 16px" }, h("p", { class: "empty" }, "Loading cases…")));
   reloadCases();
@@ -1143,7 +1151,7 @@ function hourChart(rows) {
     h("div", { class: "colax" }, list.filter((x, i) => i % 2 === 0).map(x => h("span", { text: pad(x) }))),
     peak != null ? h("p", { class: "small muted", style: "margin-top:8px" }, "Busiest hour: " + pad(peak) + ":00 to " + pad(peak + 1) + ":00 (" + plural(by[peak], "case") + "). Based on when cases were lodged.") : null);
 }
-function openTracker(f) { Object.assign(S.cf, { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "" }, f); go("cases"); }
+function openTracker(f) { Object.assign(S.cf, { q: "", channel: "", topic: "", sub: "", state: "", status: "", staff: "", sort: "date_desc" }, f); go("cases"); }
 function drawSummary() {
   const box = $("#rp"); if (!box) return; const D = summaryData(); const rows = D.rows; const R = D.R;
   const pendingN = D.pending.length, prevPending = D.prev.filter(r => r.status !== "Closed").length;
@@ -1460,10 +1468,18 @@ function openChangePassword() {
 /* ================= import from Excel (manager) ================= */
 const IMPORT_HEADERS = { "DATE": "date", "DEALER ID": "dealer", "FON NO": "phone", "PHONE NO": "phone", "CONTACT NUMBER": "phone", "CONTACT NO": "phone", "DEALERS NAME": "name", "DEALER NAME": "name", "STATE": "state",
   "MAIN ISSUE": "topic", "SUB ISSUE": "sub", "DESCRIPTION": "desc", "CASE": "caseRef", "CASE NO": "caseRef", "ISSUE": "issueRef", "ISSUE NO": "issueRef", "DATE COMPLETE": "completed", "ASSIGNED TO": "assigned", "STATUS": "status",
-  "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact", "SENDER CONTACT": "contact" };
+  "DATE COMPLETED": "completed", "SOURCE": "source", "REMARKS": "remarks", "CONTACT": "contact", "SENDER CONTACT": "contact", "STAFF": "staff" };
 const EMPTY_CELL = /^(select|none|nil|n\/?a|-+|done)$/i;
 // Short spellings used in the Excel tracker, mapped to the names in the app's lists.
-const TOPIC_ALIASES = { INCENTVE: "INCENTIVE", DEALERSHP: "DEALERSHIP", ERECHRGE: "E-RECHARGE", ERECHARGE: "E-RECHARGE", HIRARCHY: "HIERARCHY" };
+const TOPIC_ALIASES = { INCENTVE: "INCENTIVE", DEALERSHP: "DEALERSHIP", ERECHRGE: "E-RECHARGE", ERECHARGE: "E-RECHARGE", HIRARCHY: "HIERARCHY", MARKETG: "MARKETING", SUGGESTN: "SUGGESTION" };
+// Names written in the STAFF column of the Excel tracker -> login email of the member.
+const STAFF_ALIASES = { hanis: "hanis.rahim@xox.com.my", nik: "azmi.kamanordin@xox.com.my", azmi: "azmi.kamanordin@xox.com.my", fizul: "hafizul.ariffin@xox.com.my", fizol: "hafizul.ariffin@xox.com.my", reen: "zaireen.zulkifli@xox.com.my", zaireen: "zaireen.zulkifli@xox.com.my", kerol: "annuar.kahar@xox.com.my", annuar: "annuar.kahar@xox.com.my", aqib: "azarian.nazuran@xox.com.my", azarian: "azarian.nazuran@xox.com.my", daud: "daud.chuah@xox.com.my", wendy: "bcchow@xox.com.my" };
+function staffEmail(v) {
+  const k = String(v || "").trim().toLowerCase(); if (!k) return null;
+  if (STAFF_ALIASES[k]) return STAFF_ALIASES[k];
+  const m = S.members.find(m => m.email.toLowerCase() === k || m.name.toLowerCase().split(/\s+/).includes(k)); return m ? m.email.toLowerCase() : null;
+}
+function fixPhone(v) { let t = String(v || "").replace(/\s/g, ""); if (/^\d{9,10}$/.test(t) && !t.startsWith("0")) t = "0" + t; return t; }
 function cellText(v) { const t = String(v ?? "").replace(/\s+/g, " ").trim(); return EMPTY_CELL.test(t) ? "" : t; }
 function cellDate(v) {
   if (typeof v === "number" && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate()); }
@@ -1474,7 +1490,7 @@ function cellDate(v) {
 }
 function mapSource(v) {
   const k = String(v || "").toLowerCase().replace(/[^a-z]/g, "");
-  const known = { email: "Email", emel: "Email", call: "Call", calls: "Call", phone: "Call", inbound: "Call", whatsapp: "WhatsApp", wa: "WhatsApp", whatapps: "WhatsApp", whatsap: "WhatsApp", facebook: "Facebook", fb: "Facebook", walkin: "Walk-In", others: "Others", other: "Others" };
+  const known = { email: "Email", emel: "Email", call: "Call", calls: "Call", phone: "Call", inbound: "Call", whatsapp: "WhatsApp", wa: "WhatsApp", whatapps: "WhatsApp", whatsap: "WhatsApp", facebook: "Facebook", fb: "Facebook", fbodg: "Facebook", walkin: "Walk-In", others: "Others", other: "Others" };
   if (known[k]) return known[k];
   const hit = S.channels.find(c => c.toLowerCase().replace(/[^a-z]/g, "") === k);
   return hit || (v ? String(v).trim() : NOT_SET);
@@ -1501,7 +1517,7 @@ function parseSheet(ws) {
   const out = [], skipped = { noDate: 0 };
   for (let i = hd.row + 1; i < aoa.length; i++) {
     const row = aoa[i]; const g = k => k in hd.map ? row[hd.map[k]] : "";
-    const x = { dealer: cellText(g("dealer")).toUpperCase(), phone: cellText(g("phone")), name: cellText(g("name")), state: cellText(g("state")).toUpperCase(), topic: (t => TOPIC_ALIASES[t] || t)(cellText(g("topic")).toUpperCase()),
+    const x = { dealer: cellText(g("dealer")).toUpperCase(), phone: fixPhone(cellText(g("phone"))), name: cellText(g("name")), state: cellText(g("state")).toUpperCase(), topic: (t => TOPIC_ALIASES[t] || t)(cellText(g("topic")).toUpperCase()),
       sub: cellText(g("sub")).toUpperCase(), desc: cellText(g("desc")), caseRef: cellText(g("caseRef")).toUpperCase(), issueRef: cellText(g("issueRef")).toUpperCase(), assigned: cellText(g("assigned")), remarks: cellText(g("remarks")), contact: cellText(g("contact")) };
     if (!x.desc && !x.dealer && !x.caseRef && !x.phone) continue;              // empty template row
     const date = cellDate(g("date")); if (!date) { skipped.noDate++; continue; }
@@ -1509,10 +1525,12 @@ function parseSheet(ws) {
     const channel = mapSource(cellText(g("source")));
     let contact = x.contact, resolution = x.remarks;
     if (!contact && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.remarks)) { contact = x.remarks; resolution = ""; }   // the tracker keeps sender emails in REMARKS
+    if (!contact && /^\+?[\d\s-]{8,}$/.test(x.remarks) && ["call", "whatsapp", "walk-in"].includes(chKey(channel))) { contact = fixPhone(x.remarks); resolution = ""; }
     if (!contact) contact = x.phone || x.dealer || "-";
     const status = mapStatus(cellText(g("status")), completed);
     out.push({ case_date: date, channel, contact, contact_norm: normContact(channel, contact), dealer_id: x.dealer || null, dealer_name: x.name || null, dealer_phone: x.phone || null,
       state: x.state || null, topic: x.topic || null, sub_issue: x.sub || null, description: x.desc || [x.topic, x.sub].filter(Boolean).join(" ") || "Imported case",
+      dealer_phone_norm: x.phone ? normContact("call", x.phone) : "", staff_email: staffEmail(cellText(g("staff"))) || S.email,
       case_ref: x.caseRef || null, issue_ref: x.issueRef || null, assigned_to: x.assigned || null, status, completed_on: status === "Closed" ? (completed || date) : null, resolution: resolution || null });
   }
   return { rows: out, skipped };
