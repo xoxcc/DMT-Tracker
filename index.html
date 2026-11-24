@@ -685,7 +685,7 @@ function caseForm(d, opt) {
   const m = chMeta(d.channel);
   const sel = (k, list, prop, placeholder) => {
     const s = h("select", { id: id(k), disabled: ro, onchange: e => { d[prop] = e.target.value; clearErr(pre, k); if (prop === "topic" || prop === "sub") drawQuickTexts(d, pre); } },
-      h("option", { value: "" }, placeholder), uniq([...list, d[prop]]).map(v => h("option", { value: v }, v)));
+      h("option", { value: "" }, placeholder), azSort(uniq([...list, d[prop]])).map(v => h("option", { value: v }, v)));
     s.value = d[prop]; return s;
   };
   const inp = (k, prop, attrs, onIn) => h("input", Object.assign({ id: id(k), value: d[prop], readonly: ro, autocomplete: "off",
@@ -928,7 +928,8 @@ function staffOptions(allLabel) {
   return [h("option", { value: "" }, allLabel), h("option", { value: S.email }, "Me"),
     S.members.filter(m => m.email !== S.email).map(m => h("option", { value: m.email }, m.name + (m.active ? "" : " (inactive)")))];
 }
-function listOptions(list, noneLabel) { return [h("option", { value: "" }, "All"), list.map(v => h("option", { value: v }, v)), h("option", { value: "__none" }, noneLabel)]; }
+const azSort = list => list.slice().sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true }));
+function listOptions(list, noneLabel) { return [h("option", { value: "" }, "All"), azSort(list).map(v => h("option", { value: v }, v)), h("option", { value: "__none" }, noneLabel)]; }
 function renderCases() {
   const f = S.cf; const set = (k, v) => { f[k] = v; reloadSoon(); };
   const sel = (id, k, opts) => { const s = h("select", { id, onchange: e => set(k, e.target.value) }, opts); s.value = f[k]; return s; };
@@ -945,7 +946,7 @@ function renderCases() {
       fld("cf-from", "From", h("input", { type: "date", id: "cf-from", value: f.from, onchange: e => set("from", e.target.value) })),
       fld("cf-to", "To", h("input", { type: "date", id: "cf-to", value: f.to, onchange: e => set("to", e.target.value) })),
       fld("cf-sort", "Sort by", sel("cf-sort", "sort", [["date_desc", "Date: newest first"], ["date_asc", "Date: oldest first"], ["name_az", "Dealer name: A to Z"], ["name_za", "Dealer name: Z to A"], ["topic_az", "Main issue: A to Z"], ["state_az", "State: A to Z"], ["staff_az", "Logged by: A to Z"]].map(([v, l]) => h("option", { value: v }, l))))),
-    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("div", { class: "actions" }, role() === "manager" ? h("button", { class: "btn sm", onclick: openImport }, "Import Excel") : null, h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel"))),
+    h("div", { class: "toolbar" }, h("span", { class: "muted", id: "cres-count" }), h("div", { class: "actions" }, role() === "manager" ? h("button", { class: "btn sm", onclick: openImport }, "Import Excel") : null, h("button", { class: "btn sm", onclick: openDuplicates }, "Find duplicates"), h("button", { class: "btn sm", onclick: exportTracker }, "Download Excel"))),
     h("div", { class: "card", id: "cres", style: "padding:12px 16px" }, h("p", { class: "empty" }, "Loading cases…")));
   reloadCases();
 }
@@ -1038,7 +1039,7 @@ function renderSummary() {
   else picker = h("div", { class: "actions", style: "gap:6px" },
     h("input", { type: "date", value: r.from, "aria-label": "From", style: "width:auto", onchange: e => { r.from = e.target.value; loadSummary(); } }), h("span", { class: "muted" }, "to"),
     h("input", { type: "date", value: r.to, "aria-label": "To", style: "width:auto", onchange: e => { r.to = e.target.value; loadSummary(); } }));
-  const fsel = (k, label, list) => { const s = h("select", { "aria-label": label, style: "width:auto", onchange: e => { r[k] = e.target.value; drawSummary(); } }, h("option", { value: "" }, label + ": all"), list.map(v => h("option", { value: v }, v)), h("option", { value: NOT_SET }, NOT_SET)); s.value = r[k]; return s; };
+  const fsel = (k, label, list) => { const s = h("select", { "aria-label": label, style: "width:auto", onchange: e => { r[k] = e.target.value; drawSummary(); } }, h("option", { value: "" }, label + ": all"), azSort(list).map(v => h("option", { value: v }, v)), h("option", { value: NOT_SET }, NOT_SET)); s.value = r[k]; return s; };
   let staffSel = null;
   if (!isStaff) { staffSel = h("select", { style: "width:auto", "aria-label": "Staff", onchange: e => { r.staff = e.target.value; loadSummary(); } }, staffOptions("Whole team")); staffSel.value = r.staff; }
   put($("#main"),
@@ -1430,6 +1431,7 @@ function openCampaignEditor(c) {
 /* ================= change password ================= */
 function showPwNotice() {
   const n = $("#notice");
+  n.hidden = true; return;   // reminder removed — the Change password button in the header is enough
   if (!(S.user && S.user.user_metadata && S.user.user_metadata.temp_password)) { n.hidden = true; return; }
   put(n, h("span", {}, "You’re using a temporary password. Please change it to one only you know."), h("button", { class: "btn sm", onclick: openChangePassword }, "Change password"));
   n.hidden = false;
@@ -1608,6 +1610,57 @@ function openImport() {
   step1(); dlg.showModal();
 }
 
+
+/* ================= find duplicates ================= */
+function openDuplicates() {
+  const dlg = $("#dlg"); const body = h("div", { class: "stack", style: "gap:12px" });
+  const today = new Date().toISOString().slice(0, 10);
+  const from = h("input", { type: "date", value: (S.cf && S.cf.from) || "2026-07-01" });
+  const to = h("input", { type: "date", value: (S.cf && S.cf.to) || today });
+  const mode = h("select", { style: "width:auto" },
+    h("option", { value: "exact" }, "Exact copies (same date, dealer, logged by, issue, description and case no.)"),
+    h("option", { value: "loose" }, "Possible repeats (same date, dealer, main issue and sub issue)"));
+  const out = h("div", { class: "stack", style: "gap:10px" });
+  const norm = v => String(v == null ? "" : v).trim().toLowerCase().replace(/\s+/g, " ");
+  const keyOf = (r, m) => m === "exact"
+    ? [r.case_date, r.dealer_id, r.staff_email, r.topic, r.sub_issue, r.description, r.case_ref].map(norm).join("|")
+    : [r.case_date, r.dealer_id, r.topic, r.sub_issue].map(norm).join("|");
+  const find = async () => {
+    put(out, h("p", { class: "loading" }, "Checking cases…"));
+    try {
+      const m = mode.value;
+      const rows = await S.api.reportCases(from.value || "2000-01-01", to.value || today, "");
+      const groups = new Map();
+      rows.forEach(r => { if (m === "loose" && !norm(r.dealer_id)) return; const k = keyOf(r, m); (groups.get(k) || groups.set(k, []).get(k)).push(r); });
+      const dups = [...groups.values()].filter(g => g.length > 1).sort((a, b) => b[0].case_date.localeCompare(a[0].case_date));
+      const extra = dups.reduce((n, g) => n + g.length - 1, 0);
+      if (!dups.length) return put(out, h("p", { class: "empty" }, "No duplicates found in " + rows.length + " cases (" + from.value + " to " + to.value + ")."));
+      const shown = dups.slice(0, 60);
+      const del = async () => {
+        if (!confirm("Delete " + extra + " extra cop" + (extra === 1 ? "y" : "ies") + "? The first case in each group is kept.")) return;
+        let done = 0, fail = 0;
+        for (const g of dups) { const keep = g.slice().sort((a, b) => (a.case_no || 0) - (b.case_no || 0))[0];
+          for (const r of g) { if (r.id === keep.id) continue; try { await S.api.deleteCase(r.id); done++; } catch (x) { fail++; } } }
+        toast(done + " duplicate" + (done === 1 ? "" : "s") + " deleted" + (fail ? ", " + fail + " not allowed" : "")); reloadCases(); find();
+      };
+      put(out,
+        h("p", { style: "font-weight:600" }, dups.length + " group" + (dups.length === 1 ? "" : "s") + ", " + extra + " extra row" + (extra === 1 ? "" : "s") + " (" + rows.length + " cases checked)"),
+        m === "exact" && canManage() ? h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", onclick: del }, "Delete " + extra + " extra cop" + (extra === 1 ? "y" : "ies") + " (keep the first of each)")) : null,
+        m === "loose" ? h("p", { class: "small muted" }, "These can be genuine repeat contacts from the same dealer, so they are shown for checking only.") : null,
+        h("div", { style: "overflow:auto;max-height:50vh" }, h("table", { class: "tbl" },
+          h("thead", {}, h("tr", {}, ["Date", "Dealer", "Logged by", "Issue", "Description", "Case nos."].map(t => h("th", {}, t)))),
+          h("tbody", {}, shown.map(g => { const r = g[0]; return h("tr", {},
+            h("td", { class: "nowrap", text: fmtDmy(r.case_date) }), h("td", { text: [r.dealer_id, r.dealer_name].filter(Boolean).join(" · ") }), h("td", { text: r.staff_name || "" }),
+            h("td", { text: [r.topic, r.sub_issue].filter(Boolean).join(" / ") }), h("td", { class: "clip", style: "max-width:260px", text: r.description || "" }),
+            h("td", { class: "nowrap", text: g.map(x => caseNo(x.case_no)).join(", ") })); })))),
+        dups.length > shown.length ? h("p", { class: "small muted" }, "Showing the first " + shown.length + " of " + dups.length + " groups.") : null);
+    } catch (x) { put(out, h("p", { style: "color:var(--danger)" }, "Could not check: " + errMsg(x))); }
+  };
+  put(body, h("div", { class: "actions", style: "gap:8px;flex-wrap:wrap;align-items:center" }, "From", from, "to", to), mode, h("div", { class: "actions" }, h("button", { class: "btn primary", type: "button", onclick: find }, "Find duplicates")), out);
+  put(dlg, h("div", { class: "dlg" }, h("div", { class: "dlg-h" }, h("h2", { text: "Find duplicates" }), h("button", { class: "btn sm", type: "button", onclick: () => dlg.close() }, "Close")), body));
+  dlg.showModal();
+}
+
 /* ================= settings (manager) ================= */
 function renderSettings() {
   if (role() !== "manager") return go("lodge");
@@ -1714,7 +1767,7 @@ function templateEditor() {
   const box = h("div", {});
   const draw = () => put(box, rows.length ? rows.map((t, i) => {
     const tp = h("select", { "aria-label": "Main issue", onchange: e => t.topic = e.target.value }, h("option", { value: "" }, "Any main issue"), uniq([...S.topics, t.topic]).map(v => h("option", { value: v }, v))); tp.value = t.topic || "";
-    const sb = h("select", { "aria-label": "Sub issue", onchange: e => t.sub = e.target.value }, h("option", { value: "" }, "Any sub issue"), uniq([...S.subs, t.sub]).map(v => h("option", { value: v }, v))); sb.value = t.sub || "";
+    const sb = h("select", { "aria-label": "Sub issue", onchange: e => t.sub = e.target.value }, h("option", { value: "" }, "Any sub issue"), azSort(uniq([...S.subs, t.sub])).map(v => h("option", { value: v }, v))); sb.value = t.sub || "";
     return h("div", { class: "qtrow" }, tp, sb, h("input", { type: "text", value: t.text, "aria-label": "Text", placeholder: "e.g. {phone} - Check status top-up", oninput: e => t.text = e.target.value }),
       h("button", { class: "btn sm", type: "button", "aria-label": "Remove", onclick: () => { rows.splice(i, 1); draw(); } }, "Remove"));
   }) : h("p", { class: "empty" }, "No quick texts yet."));
