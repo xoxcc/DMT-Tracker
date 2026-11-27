@@ -587,6 +587,8 @@ async function loadCore() {
   S.topics = (st && Array.isArray(st.topics)) ? st.topics : [];
   S.subs = (st && Array.isArray(st.sub_issues)) ? st.sub_issues : DEFAULT_SUBS.slice();
   S.states = arr(st && st.states, DEFAULT_STATES.slice());
+  const withOthers = l => l.some(v => String(v).trim().toLowerCase() === "others") ? l : [...l, "OTHERS"];   // always offer OTHERS for State and Main issue
+  S.topics = withOthers(S.topics); S.states = withOthers(S.states); S.subs = withOthers(S.subs);
   S.audience = arr(st && st.campaign_audience, DEFAULT_AUDIENCE.slice());
   S.templates = (st && Array.isArray(st.templates)) ? st.templates.filter(t => t && t.text) : [];
   try { S.campaigns = await S.api.campaigns(); } catch (e) { console.warn("campaigns not loaded", e); S.campaigns = []; }
@@ -685,7 +687,7 @@ function caseForm(d, opt) {
   const m = chMeta(d.channel);
   const sel = (k, list, prop, placeholder) => {
     const s = h("select", { id: id(k), disabled: ro, onchange: e => { d[prop] = e.target.value; clearErr(pre, k); if (prop === "topic" || prop === "sub") drawQuickTexts(d, pre); } },
-      h("option", { value: "" }, placeholder), azSort(uniq([...list, d[prop]])).map(v => h("option", { value: v }, v)));
+      h("option", { value: "" }, placeholder), (l => [...l.filter(v => String(v).trim().toLowerCase() !== "others"), ...l.filter(v => String(v).trim().toLowerCase() === "others")])(azSort(uniq([...list, d[prop]]))).map(v => h("option", { value: v }, v)));
     s.value = d[prop]; return s;
   };
   const inp = (k, prop, attrs, onIn) => h("input", Object.assign({ id: id(k), value: d[prop], readonly: ro, autocomplete: "off",
